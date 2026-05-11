@@ -28,3 +28,12 @@ A seção **Cadastros do banco** abre uma janela de manutenção com abas para:
 - inserir, alterar e apagar/desativar resíduos, incluindo IBAMA, classe, estado físico, acondicionamento, tratamento, dados ONU/risco/embarque e campos auxiliares.
 
 As alterações feitas nessa janela são salvas no `gererp.db` e passam a ser usadas na próxima geração da planilha de saída.
+
+### Importar ou reimportar as bases auxiliares
+
+Se algum cadastro não aparecer no banco depois da primeira execução, use o botão **Importar planilhas** na seção **Cadastros do banco**. Ele importa/atualiza os dois arquivos auxiliares:
+
+- `cnpj_cetesb.xlsx`;
+- `Listagem_Residuos_Geral_02_04_26.xlsx`.
+
+Esse botão pode ser usado novamente quando as planilhas auxiliares forem atualizadas.

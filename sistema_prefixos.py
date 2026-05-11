@@ -729,9 +729,42 @@ class App:
         tk.Button(f, text="Abrir manutenção…", bg=COR_ACENT, fg="white",
                   relief="flat", font=("Segoe UI",9), cursor="hand2",
                   padx=12, pady=4, command=self._abrir_cadastros).pack(side="right")
+        tk.Button(f, text="Importar planilhas", bg=COR_PRIM, fg="white",
+                  relief="flat", font=("Segoe UI",9), cursor="hand2",
+                  padx=12, pady=4, command=self._importar_planilhas_auxiliares
+                  ).pack(side="right", padx=(0, 8))
 
     def _abrir_cadastros(self):
         CadastroWindow(self)
+
+    def _caminho_base(self, arquivo):
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), arquivo)
+
+    def _importar_planilhas_auxiliares(self):
+        if not messagebox.askyesno(
+            "Confirmar importação",
+            "Importar/atualizar CNPJs e resíduos das planilhas auxiliares para o banco?\n\n"
+            "Arquivos usados:\n"
+            f"• {ARQUIVO_CNPJ}\n"
+            f"• {ARQUIVO_RESIDUOS}",
+        ):
+            return
+        try:
+            caminho_cnpj = self._caminho_base(ARQUIVO_CNPJ)
+            caminho_residuos = self._caminho_base(ARQUIVO_RESIDUOS)
+            total_cnpjs = importar_cnpjs_de_xlsx(caminho_cnpj) if os.path.exists(caminho_cnpj) else 0
+            total_residuos = importar_residuos_de_xlsx(caminho_residuos) if os.path.exists(caminho_residuos) else 0
+            self._recarregar_cadastros()
+            self._render_grupos()
+            self._log(f"✔ Importação concluída: {total_cnpjs} CNPJs | {total_residuos} resíduos", "ok")
+            messagebox.showinfo(
+                "Importação concluída",
+                f"CNPJs importados/atualizados: {total_cnpjs}\n"
+                f"Resíduos importados/atualizados: {total_residuos}",
+            )
+        except Exception as e:
+            self._log(f"✖ Erro ao importar planilhas auxiliares: {e}", "er")
+            messagebox.showerror("Erro", f"Não foi possível importar as planilhas auxiliares:\n{e}")
 
     def _recarregar_cadastros(self):
         global MOTORISTAS
