@@ -36,4 +36,4 @@ Se algum cadastro não aparecer no banco depois da primeira execução, use os b
 - **Importar CNPJs…**: selecione a planilha de CNPJs e código Gerador CNPJCPF, normalmente `cnpj_cetesb.xlsx`;
 - **Importar resíduos…**: selecione a planilha de resíduos, normalmente `Listagem_Residuos_Geral_02_04_26.xlsx`.
 
-Os botões podem ser usados novamente quando qualquer uma das planilhas auxiliares for atualizada.
+Os botões podem ser usados novamente quando qualquer uma das planilhas auxiliares for atualizada. Durante a importação, o app mostra uma barra de avanço com percentual, linhas lidas e registros importados para indicar que a operação está em andamento.

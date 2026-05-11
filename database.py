@@ -11,7 +11,7 @@ import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 DB_FILE = "gererp.db"
 
@@ -430,7 +430,11 @@ def listar_prefixos_residuos(db_path: str | Path | None = None) -> dict[str, lis
         return grupos
 
 
-def importar_cnpjs_de_xlsx(arquivo: str | Path, db_path: str | Path | None = None) -> int:
+def importar_cnpjs_de_xlsx(
+    arquivo: str | Path,
+    db_path: str | Path | None = None,
+    progress_callback: Callable[[int, int, int], None] | None = None,
+) -> int:
     """Importa/atualiza CNPJs de uma planilha compatível com cnpj_cetesb.xlsx."""
     import openpyxl
 
@@ -443,18 +447,28 @@ def importar_cnpjs_de_xlsx(arquivo: str | Path, db_path: str | Path | None = Non
     col_cod = _indice(headers, ("gerador", "cnpjcpf"), 1)
 
     total = 0
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if not row or len(row) <= max(col_cnpj, col_cod):
-            continue
-        cnpj = normalizar_cnpj(row[col_cnpj])
-        codigo = texto(row[col_cod])
-        if cnpj and codigo:
-            salvar_cnpj(cnpj, codigo, db_path)
-            total += 1
+    total_linhas = max((ws.max_row or 1) - 1, 1)
+    if progress_callback:
+        progress_callback(0, total_linhas, total)
+    for pos, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=1):
+        if row and len(row) > max(col_cnpj, col_cod):
+            cnpj = normalizar_cnpj(row[col_cnpj])
+            codigo = texto(row[col_cod])
+            if cnpj and codigo:
+                salvar_cnpj(cnpj, codigo, db_path)
+                total += 1
+        if progress_callback and (pos % 25 == 0 or pos >= total_linhas):
+            progress_callback(min(pos, total_linhas), total_linhas, total)
+    if progress_callback:
+        progress_callback(total_linhas, total_linhas, total)
     return total
 
 
-def importar_residuos_de_xlsx(arquivo: str | Path, db_path: str | Path | None = None) -> int:
+def importar_residuos_de_xlsx(
+    arquivo: str | Path,
+    db_path: str | Path | None = None,
+    progress_callback: Callable[[int, int, int], None] | None = None,
+) -> int:
     """Importa/atualiza resíduos de uma planilha compatível com a listagem atual."""
     import datetime as dt
     import openpyxl
@@ -464,11 +478,18 @@ def importar_residuos_de_xlsx(arquivo: str | Path, db_path: str | Path | None = 
     ws = wb.active
 
     total = 0
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    total_linhas = max((ws.max_row or 1) - 1, 1)
+    if progress_callback:
+        progress_callback(0, total_linhas, total)
+    for pos, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=1):
         if not row or not any(row):
+            if progress_callback and (pos % 25 == 0 or pos >= total_linhas):
+                progress_callback(min(pos, total_linhas), total_linhas, total)
             continue
         codigo_interno = texto(row[10] if len(row) > 10 else "")
         if not codigo_interno:
+            if progress_callback and (pos % 25 == 0 or pos >= total_linhas):
+                progress_callback(min(pos, total_linhas), total_linhas, total)
             continue
 
         classe = texto(row[3] if len(row) > 3 else "")
@@ -501,6 +522,10 @@ def importar_residuos_de_xlsx(arquivo: str | Path, db_path: str | Path | None = 
             db_path,
         )
         total += 1
+        if progress_callback and (pos % 25 == 0 or pos >= total_linhas):
+            progress_callback(min(pos, total_linhas), total_linhas, total)
+    if progress_callback:
+        progress_callback(total_linhas, total_linhas, total)
     return total
 
 

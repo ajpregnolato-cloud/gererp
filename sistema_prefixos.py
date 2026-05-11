@@ -723,20 +723,35 @@ class App:
     def _sec_cadastros(self):
         c = self._card()
         f = tk.Frame(c, bg=COR_CARD)
-        f.pack(fill="x", padx=12, pady=10)
+        f.pack(fill="x", padx=12, pady=(10, 4))
         tk.Label(f, text="Edite CNPJs, resíduos e placas/motoristas salvos no banco local.",
                  bg=COR_CARD, fg=COR_TEXTO, font=("Segoe UI",9)).pack(side="left")
-        tk.Button(f, text="Abrir manutenção…", bg=COR_ACENT, fg="white",
-                  relief="flat", font=("Segoe UI",9), cursor="hand2",
-                  padx=12, pady=4, command=self._abrir_cadastros).pack(side="right")
-        tk.Button(f, text="Importar resíduos…", bg=COR_PRIM, fg="white",
-                  relief="flat", font=("Segoe UI",9), cursor="hand2",
-                  padx=12, pady=4, command=self._importar_residuos_planilha
-                  ).pack(side="right", padx=(0, 8))
-        tk.Button(f, text="Importar CNPJs…", bg=COR_PRIM, fg="white",
-                  relief="flat", font=("Segoe UI",9), cursor="hand2",
-                  padx=12, pady=4, command=self._importar_cnpjs_planilha
-                  ).pack(side="right", padx=(0, 8))
+        self.btn_cadastros = tk.Button(f, text="Abrir manutenção…", bg=COR_ACENT, fg="white",
+                                       relief="flat", font=("Segoe UI",9), cursor="hand2",
+                                       padx=12, pady=4, command=self._abrir_cadastros)
+        self.btn_cadastros.pack(side="right")
+        self.btn_import_residuos = tk.Button(
+            f, text="Importar resíduos…", bg=COR_PRIM, fg="white",
+            relief="flat", font=("Segoe UI",9), cursor="hand2",
+            padx=12, pady=4, command=self._importar_residuos_planilha,
+        )
+        self.btn_import_residuos.pack(side="right", padx=(0, 8))
+        self.btn_import_cnpjs = tk.Button(
+            f, text="Importar CNPJs…", bg=COR_PRIM, fg="white",
+            relief="flat", font=("Segoe UI",9), cursor="hand2",
+            padx=12, pady=4, command=self._importar_cnpjs_planilha,
+        )
+        self.btn_import_cnpjs.pack(side="right", padx=(0, 8))
+
+        prog = tk.Frame(c, bg=COR_CARD)
+        prog.pack(fill="x", padx=12, pady=(0, 10))
+        self.lbl_import_status = tk.Label(
+            prog, text="Importação: aguardando seleção de planilha",
+            bg=COR_CARD, fg=COR_MUTED, font=("Segoe UI",9), anchor="w",
+        )
+        self.lbl_import_status.pack(side="left")
+        self.import_prog = ttk.Progressbar(prog, mode="determinate", maximum=100, length=220)
+        self.import_prog.pack(side="right", padx=(8, 0))
 
     def _abrir_cadastros(self):
         CadastroWindow(self)
@@ -772,21 +787,82 @@ class App:
             f"Arquivo esperado como referência: {arquivo_padrao}",
         ):
             return
+
+        self._preparar_importacao(tipo)
+        threading.Thread(
+            target=self._thread_importar_planilha,
+            args=(tipo, caminho, importador, atualizar_grupos),
+            daemon=True,
+        ).start()
+
+    def _preparar_importacao(self, tipo):
+        self._set_import_buttons_state("disabled")
+        self.import_prog["value"] = 0
+        self.lbl_import_status.configure(
+            text=f"Importando {tipo}: 0% — iniciando leitura da planilha",
+            fg=COR_ACENT,
+        )
+        self._log(f"⏳ Importando {tipo}...", "inf")
+
+    def _set_import_buttons_state(self, state):
+        for nome in ("btn_import_cnpjs", "btn_import_residuos", "btn_cadastros"):
+            if hasattr(self, nome):
+                getattr(self, nome).configure(state=state)
+
+    def _thread_importar_planilha(self, tipo, caminho, importador, atualizar_grupos):
         try:
-            total = importador(caminho)
-            self._recarregar_cadastros()
-            if atualizar_grupos:
-                self._render_grupos()
-            self._log(f"✔ Importação de {tipo} concluída: {total} registro(s) de {caminho}", "ok")
-            messagebox.showinfo(
-                "Importação concluída",
-                f"Tipo importado: {tipo}\n"
-                f"Registros importados/atualizados: {total}\n\n"
-                f"Planilha:\n{caminho}",
+            def progress_callback(atual, total_linhas, importados):
+                self.root.after(
+                    0, self._atualizar_progresso_importacao,
+                    tipo, atual, total_linhas, importados,
+                )
+
+            total = importador(caminho, progress_callback=progress_callback)
+            self.root.after(
+                0, self._finalizar_importacao_sucesso,
+                tipo, caminho, total, atualizar_grupos,
             )
         except Exception as e:
-            self._log(f"✖ Erro ao importar {tipo} de {caminho}: {e}", "er")
-            messagebox.showerror("Erro", f"Não foi possível importar {tipo}:\n{e}")
+            self.root.after(0, self._finalizar_importacao_erro, tipo, caminho, e)
+
+    def _atualizar_progresso_importacao(self, tipo, atual, total_linhas, importados):
+        total_linhas = max(total_linhas, 1)
+        percentual = max(0, min(100, int((atual / total_linhas) * 100)))
+        self.import_prog["value"] = percentual
+        self.lbl_import_status.configure(
+            text=(
+                f"Importando {tipo}: {percentual}% "
+                f"({atual}/{total_linhas} linhas, {importados} registros)"
+            ),
+            fg=COR_ACENT,
+        )
+
+    def _finalizar_importacao_sucesso(self, tipo, caminho, total, atualizar_grupos):
+        self._recarregar_cadastros()
+        if atualizar_grupos:
+            self._render_grupos()
+        self.import_prog["value"] = 100
+        self.lbl_import_status.configure(
+            text=f"Importação de {tipo}: 100% — {total} registro(s) importado(s)/atualizado(s)",
+            fg=COR_OK,
+        )
+        self._set_import_buttons_state("normal")
+        self._log(f"✔ Importação de {tipo} concluída: {total} registro(s) de {caminho}", "ok")
+        messagebox.showinfo(
+            "Importação concluída",
+            f"Tipo importado: {tipo}\n"
+            f"Registros importados/atualizados: {total}\n\n"
+            f"Planilha:\n{caminho}",
+        )
+
+    def _finalizar_importacao_erro(self, tipo, caminho, erro):
+        self._set_import_buttons_state("normal")
+        self.lbl_import_status.configure(
+            text=f"Importação de {tipo} falhou — verifique o log",
+            fg=COR_ERR,
+        )
+        self._log(f"✖ Erro ao importar {tipo} de {caminho}: {erro}", "er")
+        messagebox.showerror("Erro", f"Não foi possível importar {tipo}:\n{erro}")
 
     def _recarregar_cadastros(self):
         global MOTORISTAS
