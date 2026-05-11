@@ -18,3 +18,13 @@ Na primeira execução, se o banco ainda não tiver dados, o sistema importa aut
 - `Listagem_Residuos_Geral_02_04_26.xlsx`.
 
 Os arquivos de entrada recebidos de usuários e os arquivos de saída gerados continuam sendo planilhas `.xlsx` transitórias do processamento.
+
+## Manutenção dos cadastros
+
+A seção **Cadastros do banco** abre uma janela de manutenção com abas para:
+
+- inserir, alterar e apagar/desativar CNPJs e o código Gerador CNPJCPF;
+- inserir, alterar e apagar/desativar placas e motoristas;
+- inserir, alterar e apagar/desativar resíduos, incluindo IBAMA, classe, estado físico, acondicionamento, tratamento, dados ONU/risco/embarque e campos auxiliares.
+
+As alterações feitas nessa janela são salvas no `gererp.db` e passam a ser usadas na próxima geração da planilha de saída.

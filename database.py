@@ -314,6 +314,17 @@ def listar_residuos(db_path: str | Path | None = None, somente_ativos: bool = Tr
         return residuos
 
 
+def listar_residuos_completos(db_path: str | Path | None = None, somente_ativos: bool = True) -> dict[str, dict[str, str]]:
+    """Retorna todos os campos dos resíduos para telas de manutenção."""
+    inicializar_banco(db_path)
+    sql = "SELECT * FROM residuos"
+    if somente_ativos:
+        sql += " WHERE ativo = 1"
+    sql += " ORDER BY codigo_interno"
+    with conectar(db_path) as conn:
+        return {row["codigo_interno"]: dict(row) for row in conn.execute(sql)}
+
+
 def salvar_motorista(placa: Any, motorista: Any, db_path: str | Path | None = None) -> None:
     """Insere ou altera a relação placa -> motorista."""
     placa_norm = normalizar_placa(placa)

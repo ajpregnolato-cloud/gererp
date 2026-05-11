@@ -12,6 +12,8 @@ from tkinter import ttk, messagebox
 
 from database import (
     apagar_cnpj,
+    apagar_motorista,
+    apagar_residuo,
     importar_cnpjs_de_xlsx,
     importar_motoristas,
     importar_residuos_de_xlsx,
@@ -20,7 +22,10 @@ from database import (
     listar_motoristas,
     listar_prefixos_residuos,
     listar_residuos,
+    listar_residuos_completos,
     salvar_cnpj,
+    salvar_motorista,
+    salvar_residuo,
     salvar_prefixo_residuo,
     apagar_prefixo_residuo,
 )
@@ -288,6 +293,293 @@ def selecionar_arquivo(modo="abrir", titulo="Selecionar", ext="xlsx"):
     except Exception:
         return ""
 
+# ── Janelas de manutenção dos cadastros ───────────────────────────────────────
+class CadastroWindow:
+    def __init__(self, app):
+        self.app = app
+        self.win = tk.Toplevel(app.root)
+        self.win.title("Manutenção de Cadastros")
+        self.win.geometry("980x680")
+        self.win.configure(bg=COR_BG)
+        self.win.transient(app.root)
+
+        self.nb = ttk.Notebook(self.win)
+        self.nb.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self._build_cnpjs()
+        self._build_motoristas()
+        self._build_residuos()
+
+        self.win.protocol("WM_DELETE_WINDOW", self._fechar)
+
+    def _tab(self, nome):
+        frame = tk.Frame(self.nb, bg=COR_CARD)
+        self.nb.add(frame, text=nome)
+        return frame
+
+    def _tree(self, parent, columns, headings, widths):
+        box = tk.Frame(parent, bg=COR_CARD)
+        box.pack(fill="both", expand=True, padx=10, pady=10)
+        tree = ttk.Treeview(box, columns=columns, show="headings", height=12)
+        ysb = ttk.Scrollbar(box, orient="vertical", command=tree.yview)
+        xsb = ttk.Scrollbar(box, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=ysb.set, xscrollcommand=xsb.set)
+        for col, head, width in zip(columns, headings, widths):
+            tree.heading(col, text=head)
+            tree.column(col, width=width, anchor="w")
+        tree.grid(row=0, column=0, sticky="nsew")
+        ysb.grid(row=0, column=1, sticky="ns")
+        xsb.grid(row=1, column=0, sticky="ew")
+        box.rowconfigure(0, weight=1)
+        box.columnconfigure(0, weight=1)
+        return tree
+
+    def _form_entry(self, parent, row, label, var, width=34):
+        tk.Label(parent, text=label, bg=COR_CARD, fg=COR_TEXTO,
+                 font=("Segoe UI", 9, "bold"), anchor="w").grid(
+            row=row, column=0, sticky="w", padx=(0, 8), pady=4)
+        ent = tk.Entry(parent, textvariable=var, width=width, bg="#F8F9FA",
+                       relief="flat", highlightbackground=COR_BORDA,
+                       highlightthickness=1, font=("Segoe UI", 9))
+        ent.grid(row=row, column=1, sticky="ew", pady=4)
+        return ent
+
+    def _buttons(self, parent, novo, salvar, apagar):
+        btns = tk.Frame(parent, bg=COR_CARD)
+        btns.grid(row=99, column=0, columnspan=4, sticky="w", pady=(8, 0))
+        tk.Button(btns, text="Novo/Limpar", bg=COR_ACENT, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3,
+                  command=novo).pack(side="left")
+        tk.Button(btns, text="Salvar", bg=COR_OK, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3,
+                  command=salvar).pack(side="left", padx=6)
+        tk.Button(btns, text="Apagar", bg=COR_ERR, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3,
+                  command=apagar).pack(side="left")
+
+    # CNPJs --------------------------------------------------------------------
+    def _build_cnpjs(self):
+        tab = self._tab("CNPJs")
+        self.tree_cnpj = self._tree(
+            tab, ("cnpj", "codigo"), ("CNPJ", "Gerador CNPJCPF"), (210, 160)
+        )
+        self.tree_cnpj.bind("<<TreeviewSelect>>", self._selecionar_cnpj)
+
+        form = tk.Frame(tab, bg=COR_CARD)
+        form.pack(fill="x", padx=10, pady=(0, 10))
+        form.columnconfigure(1, weight=1)
+        self.var_cad_cnpj = tk.StringVar()
+        self.var_cad_codigo = tk.StringVar()
+        self._form_entry(form, 0, "CNPJ", self.var_cad_cnpj)
+        self._form_entry(form, 1, "Gerador CNPJCPF", self.var_cad_codigo)
+        self._buttons(form, self._limpar_cnpj, self._salvar_cnpj_cadastro, self._apagar_cnpj_cadastro)
+        self._refresh_cnpjs()
+
+    def _refresh_cnpjs(self):
+        for item in self.tree_cnpj.get_children():
+            self.tree_cnpj.delete(item)
+        for cnpj, codigo in listar_cnpjs().items():
+            self.tree_cnpj.insert("", "end", values=(cnpj, codigo))
+
+    def _selecionar_cnpj(self, _event=None):
+        sel = self.tree_cnpj.selection()
+        if not sel:
+            return
+        cnpj, codigo = self.tree_cnpj.item(sel[0], "values")
+        self.var_cad_cnpj.set(cnpj)
+        self.var_cad_codigo.set(codigo)
+
+    def _limpar_cnpj(self):
+        self.var_cad_cnpj.set("")
+        self.var_cad_codigo.set("")
+        self.tree_cnpj.selection_remove(self.tree_cnpj.selection())
+
+    def _salvar_cnpj_cadastro(self):
+        try:
+            salvar_cnpj(self.var_cad_cnpj.get(), self.var_cad_codigo.get())
+            self._refresh_cnpjs()
+            self.app._recarregar_cadastros()
+            self.app._log("✔ CNPJ salvo pela tela de cadastros", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível salvar o CNPJ:\n{e}", parent=self.win)
+
+    def _apagar_cnpj_cadastro(self):
+        cnpj = limpar_cnpj(self.var_cad_cnpj.get())
+        if not cnpj:
+            messagebox.showwarning("Atenção", "Informe ou selecione um CNPJ.", parent=self.win)
+            return
+        if not messagebox.askyesno("Confirmar", f"Apagar/desativar o CNPJ {cnpj}?", parent=self.win):
+            return
+        try:
+            apagar_cnpj(cnpj)
+            self._limpar_cnpj()
+            self._refresh_cnpjs()
+            self.app._recarregar_cadastros()
+            self.app._log("✔ CNPJ apagado pela tela de cadastros", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível apagar o CNPJ:\n{e}", parent=self.win)
+
+    # Motoristas ---------------------------------------------------------------
+    def _build_motoristas(self):
+        tab = self._tab("Motoristas")
+        self.tree_motorista = self._tree(
+            tab, ("placa", "motorista"), ("Placa", "Motorista"), (140, 260)
+        )
+        self.tree_motorista.bind("<<TreeviewSelect>>", self._selecionar_motorista)
+
+        form = tk.Frame(tab, bg=COR_CARD)
+        form.pack(fill="x", padx=10, pady=(0, 10))
+        form.columnconfigure(1, weight=1)
+        self.var_cad_placa = tk.StringVar()
+        self.var_cad_motorista = tk.StringVar()
+        self._form_entry(form, 0, "Placa", self.var_cad_placa)
+        self._form_entry(form, 1, "Motorista", self.var_cad_motorista)
+        self._buttons(form, self._limpar_motorista, self._salvar_motorista_cadastro, self._apagar_motorista_cadastro)
+        self._refresh_motoristas()
+
+    def _refresh_motoristas(self):
+        for item in self.tree_motorista.get_children():
+            self.tree_motorista.delete(item)
+        for placa, motorista in sorted(listar_motoristas().items()):
+            self.tree_motorista.insert("", "end", values=(placa, motorista))
+
+    def _selecionar_motorista(self, _event=None):
+        sel = self.tree_motorista.selection()
+        if not sel:
+            return
+        placa, motorista = self.tree_motorista.item(sel[0], "values")
+        self.var_cad_placa.set(placa)
+        self.var_cad_motorista.set(motorista)
+
+    def _limpar_motorista(self):
+        self.var_cad_placa.set("")
+        self.var_cad_motorista.set("")
+        self.tree_motorista.selection_remove(self.tree_motorista.selection())
+
+    def _salvar_motorista_cadastro(self):
+        try:
+            salvar_motorista(self.var_cad_placa.get(), self.var_cad_motorista.get())
+            self._refresh_motoristas()
+            self.app._recarregar_cadastros()
+            self.app._log("✔ Motorista salvo pela tela de cadastros", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível salvar o motorista:\n{e}", parent=self.win)
+
+    def _apagar_motorista_cadastro(self):
+        placa = self.var_cad_placa.get().strip()
+        if not placa:
+            messagebox.showwarning("Atenção", "Informe ou selecione uma placa.", parent=self.win)
+            return
+        if not messagebox.askyesno("Confirmar", f"Apagar/desativar a placa {placa}?", parent=self.win):
+            return
+        try:
+            apagar_motorista(placa)
+            self._limpar_motorista()
+            self._refresh_motoristas()
+            self.app._recarregar_cadastros()
+            self.app._log("✔ Motorista apagado pela tela de cadastros", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível apagar o motorista:\n{e}", parent=self.win)
+
+    # Resíduos -----------------------------------------------------------------
+    def _build_residuos(self):
+        tab = self._tab("Resíduos")
+        self.tree_residuo = self._tree(
+            tab,
+            ("codigo", "ibama", "classe", "descricao"),
+            ("Código Interno", "IBAMA", "Classe", "Descrição"),
+            (130, 120, 90, 520),
+        )
+        self.tree_residuo.bind("<<TreeviewSelect>>", self._selecionar_residuo)
+
+        form = tk.Frame(tab, bg=COR_CARD)
+        form.pack(fill="x", padx=10, pady=(0, 10))
+        for col in (1, 3):
+            form.columnconfigure(col, weight=1)
+        self.res_vars = {campo: tk.StringVar() for campo in (
+            "codigo_interno", "codigo_ibama", "peso", "estado_fisico", "classe",
+            "acondicionamento", "tratamento", "codigo_onu", "classe_risco",
+            "nome_embarque", "grupo_embalagem", "descricao", "cod_res",
+            "cod_trat", "usuario",
+        )}
+        campos = [
+            ("codigo_interno", "Código Interno"), ("codigo_ibama", "IBAMA"),
+            ("peso", "Peso/Unidade"), ("estado_fisico", "Estado Físico"),
+            ("classe", "Classe"), ("acondicionamento", "Acondicionamento"),
+            ("tratamento", "Tratamento"), ("codigo_onu", "Código ONU"),
+            ("classe_risco", "Classe de Risco"), ("grupo_embalagem", "Grupo Embalagem"),
+            ("cod_res", "Cod Res"), ("cod_trat", "Cod Trat"),
+            ("usuario", "Usuário"), ("nome_embarque", "Nome Embarque"),
+            ("descricao", "Descrição"),
+        ]
+        for idx, (campo, label) in enumerate(campos):
+            row = idx // 2
+            base_col = (idx % 2) * 2
+            tk.Label(form, text=label, bg=COR_CARD, fg=COR_TEXTO,
+                     font=("Segoe UI", 9, "bold"), anchor="w").grid(
+                row=row, column=base_col, sticky="w", padx=(0, 8), pady=3)
+            width = 54 if campo in {"descricao", "nome_embarque"} else 28
+            tk.Entry(form, textvariable=self.res_vars[campo], width=width, bg="#F8F9FA",
+                     relief="flat", highlightbackground=COR_BORDA, highlightthickness=1,
+                     font=("Segoe UI", 9)).grid(row=row, column=base_col+1, sticky="ew", pady=3)
+        self._buttons(form, self._limpar_residuo, self._salvar_residuo_cadastro, self._apagar_residuo_cadastro)
+        self._refresh_residuos()
+
+    def _refresh_residuos(self):
+        self.residuos_completos = listar_residuos_completos()
+        for item in self.tree_residuo.get_children():
+            self.tree_residuo.delete(item)
+        for codigo, res in self.residuos_completos.items():
+            self.tree_residuo.insert("", "end", values=(
+                codigo, res.get("codigo_ibama", ""), res.get("classe", ""), res.get("descricao", "")
+            ))
+
+    def _selecionar_residuo(self, _event=None):
+        sel = self.tree_residuo.selection()
+        if not sel:
+            return
+        codigo = self.tree_residuo.item(sel[0], "values")[0]
+        res = self.residuos_completos.get(codigo, {})
+        for campo, var in self.res_vars.items():
+            var.set(res.get(campo, ""))
+
+    def _limpar_residuo(self):
+        for var in self.res_vars.values():
+            var.set("")
+        self.tree_residuo.selection_remove(self.tree_residuo.selection())
+
+    def _salvar_residuo_cadastro(self):
+        try:
+            salvar_residuo({campo: var.get() for campo, var in self.res_vars.items()})
+            self._refresh_residuos()
+            self.app._recarregar_cadastros()
+            self.app._render_grupos()
+            self.app._log("✔ Resíduo salvo pela tela de cadastros", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível salvar o resíduo:\n{e}", parent=self.win)
+
+    def _apagar_residuo_cadastro(self):
+        codigo = self.res_vars["codigo_interno"].get().strip()
+        if not codigo:
+            messagebox.showwarning("Atenção", "Informe ou selecione um resíduo.", parent=self.win)
+            return
+        if not messagebox.askyesno("Confirmar", f"Apagar/desativar o resíduo {codigo}?", parent=self.win):
+            return
+        try:
+            apagar_residuo(codigo)
+            self._limpar_residuo()
+            self._refresh_residuos()
+            self.app._recarregar_cadastros()
+            self.app._render_grupos()
+            self.app._log("✔ Resíduo apagado pela tela de cadastros", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível apagar o resíduo:\n{e}", parent=self.win)
+
+    def _fechar(self):
+        self.app._recarregar_cadastros()
+        self.win.destroy()
+
+
 # ── Interface ─────────────────────────────────────────────────────────────────
 class App:
     def __init__(self, root):
@@ -359,14 +651,16 @@ class App:
         self._sec_arquivo()
         self._secao("2  Campos fixos")
         self._sec_campos()
-        self._secao("3  CNPJs carregados")
+        self._secao("3  Cadastros do banco")
+        self._sec_cadastros()
+        self._secao("4  CNPJs carregados")
         self._sec_cnpj()
-        self._secao("4  Grupos prefixo → resíduos")
+        self._secao("5  Grupos prefixo → resíduos")
         self.frame_grupos = self._card()
         tk.Label(self.frame_grupos, text="Carregue o arquivo de entrada para detectar prefixos.",
                  bg=COR_CARD, fg=COR_MUTED, font=("Segoe UI",9,"italic")).pack(
                  padx=12, pady=10, anchor="w")
-        self._secao("5  Arquivo de saída")
+        self._secao("6  Arquivo de saída")
         self._sec_saida()
         self._sec_botao()
         self._secao("Log")
@@ -425,6 +719,28 @@ class App:
                          font=("Segoe UI",9), fg=COR_MUTED)
             e.insert(0, val); e.configure(state="readonly")
             e.grid(row=i, column=1, sticky="w", padx=8)
+
+    def _sec_cadastros(self):
+        c = self._card()
+        f = tk.Frame(c, bg=COR_CARD)
+        f.pack(fill="x", padx=12, pady=10)
+        tk.Label(f, text="Edite CNPJs, resíduos e placas/motoristas salvos no banco local.",
+                 bg=COR_CARD, fg=COR_TEXTO, font=("Segoe UI",9)).pack(side="left")
+        tk.Button(f, text="Abrir manutenção…", bg=COR_ACENT, fg="white",
+                  relief="flat", font=("Segoe UI",9), cursor="hand2",
+                  padx=12, pady=4, command=self._abrir_cadastros).pack(side="right")
+
+    def _abrir_cadastros(self):
+        CadastroWindow(self)
+
+    def _recarregar_cadastros(self):
+        global MOTORISTAS
+        self.cnpj_cetesb = listar_cnpjs()
+        self.residuos = listar_residuos()
+        MOTORISTAS = listar_motoristas()
+        self.grupos_prefixo.update(listar_prefixos_residuos())
+        if hasattr(self, "lbl_cnpj_total"):
+            self._render_cnpj_resumo()
 
     def _sec_cnpj(self):
         c = self._card()
