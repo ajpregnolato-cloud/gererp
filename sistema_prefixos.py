@@ -10,89 +10,59 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+from database import (
+    apagar_cnpj,
+    importar_cnpjs_de_xlsx,
+    importar_motoristas,
+    importar_residuos_de_xlsx,
+    inicializar_banco,
+    listar_cnpjs,
+    listar_motoristas,
+    listar_prefixos_residuos,
+    listar_residuos,
+    salvar_cnpj,
+    salvar_prefixo_residuo,
+    apagar_prefixo_residuo,
+)
+
 # ── Arquivo externo de CNPJs ──────────────────────────────────────────────────
 ARQUIVO_CNPJ = "cnpj_cetesb.xlsx"   # mesmo diretório do script
 
 def carregar_cnpj_cetesb() -> dict:
     caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), ARQUIVO_CNPJ)
     try:
-        wb = openpyxl.load_workbook(caminho, read_only=True, data_only=True)
-        ws = wb.active
-        # Detecta colunas pelo cabeçalho (compatível com 2 ou 3 colunas)
-        header = next(ws.iter_rows(max_row=1, values_only=True))
-        headers = [str(h).strip().lower() if h else "" for h in header]
-        col_cnpj = next((i for i, h in enumerate(headers) if "cnpj" in h and "gerador" not in h), 0)
-        col_cod  = next((i for i, h in enumerate(headers) if "gerador" in h or "cnpjcpf" in h), 1)
-
-        dados = {}
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if not row or len(row) <= max(col_cnpj, col_cod): continue
-            cnpj = str(row[col_cnpj]).strip() if row[col_cnpj] else ""
-            raw  = row[col_cod]
-            cod  = str(int(raw)) if raw and isinstance(raw, (int, float)) else str(raw).strip() if raw else ""
-            if cnpj and cod and cnpj not in ("None", "nan", ""):
-                dados[cnpj] = cod
-        print(f"✔ {len(dados)} CNPJs carregados de '{caminho}'")
+        inicializar_banco()
+        if not listar_cnpjs(somente_ativos=False):
+            if os.path.exists(caminho):
+                total = importar_cnpjs_de_xlsx(caminho)
+                print(f"✔ {total} CNPJs importados para o banco a partir de '{caminho}'")
+            else:
+                print(f"⚠ '{caminho}' não encontrado para importação inicial.")
+        dados = listar_cnpjs()
+        print(f"✔ {len(dados)} CNPJs carregados do banco local")
         return dados
-    except FileNotFoundError:
-        print(f"⚠ '{caminho}' não encontrado.")
-        return {}
     except Exception as e:
-        print(f"⚠ Erro ao carregar CNPJs: {e}")
+        print(f"⚠ Erro ao carregar CNPJs do banco: {e}")
         return {}
 
 # ── Mapeamento de resíduos ────────────────────────────────────────────────────
 ARQUIVO_RESIDUOS = "Listagem_Residuos_Geral_02_04_26.xlsx"
 
 def carregar_residuos() -> dict:
-    import datetime
     caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), ARQUIVO_RESIDUOS)
     try:
-        wb = openpyxl.load_workbook(caminho, read_only=True, data_only=True)
-        ws = wb.active
-        residuos = {}
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if not any(row): continue
-            ibama_raw   = row[0]
-            peso        = str(row[1]).strip() if row[1] else "Kg"
-            estado      = str(row[2]).strip() if row[2] else ""
-            classe      = str(row[3]).strip() if row[3] else ""
-            acond       = str(row[4]).strip() if row[4] else ""
-            trat        = str(row[5]).strip().replace("\n", " ") if row[5] else ""
-            cod_onu     = str(int(row[6])) if row[6] and row[6] != "-" and isinstance(row[6], (int, float)) else ""
-            cl_risco    = str(int(row[7])) if row[7] and row[7] != "-" and isinstance(row[7], (int, float)) else ""
-            nome_emb    = str(row[8]).strip() if row[8] and row[8] != "-" else ""
-            grupo_emb   = str(row[9]).strip() if row[9] and row[9] != "-" else ""
-            cod_interno = str(row[10]).strip() if row[10] else ""
-            descricao   = str(row[11]).strip() if row[11] else ""
-
-            if not cod_interno: continue
-
-            # Reconstrói IBAMA a partir de data
-            if isinstance(ibama_raw, datetime.datetime):
-                d = f"{ibama_raw.day:02d}"
-                m = f"{ibama_raw.month:02d}"
-                y = str(ibama_raw.year)[2:]
-                ibama = f"{d}{m}{y}(*)" if classe == "I" else f"{d}{m}{y}"
+        inicializar_banco()
+        if not listar_residuos(somente_ativos=False):
+            if os.path.exists(caminho):
+                total = importar_residuos_de_xlsx(caminho)
+                print(f"✔ {total} resíduos importados para o banco a partir de '{caminho}'")
             else:
-                ibama = str(ibama_raw).strip().replace(" ", "")
-                if classe == "I" and not ibama.endswith("(*)"):
-                    ibama += "(*)"
-
-            residuos[cod_interno] = {
-                "ibama": ibama, "classe": classe, "descricao": descricao,
-                "estado_fisico": estado, "acondicionamento": acond,
-                "tratamento": trat, "cod_onu": cod_onu,
-                "classe_risco": cl_risco, "nome_embarque": nome_emb,
-                "grupo_embalagem": grupo_emb, "cod_interno": cod_interno,
-            }
-        print(f"✔ {len(residuos)} resíduos carregados de '{caminho}'")
+                print(f"⚠ '{caminho}' não encontrado para importação inicial.")
+        residuos = listar_residuos()
+        print(f"✔ {len(residuos)} resíduos carregados do banco local")
         return residuos
-    except FileNotFoundError:
-        print(f"⚠ '{caminho}' não encontrado.")
-        return {}
     except Exception as e:
-        print(f"⚠ Erro ao carregar resíduos: {e}")
+        print(f"⚠ Erro ao carregar resíduos do banco: {e}")
         return {}
 
 # ── Motoristas ────────────────────────────────────────────────────────────────
@@ -134,6 +104,19 @@ _MOT = {
     "EZU2127":"TERCEIRO","FXP1C07":"SALVADOR",
 }
 MOTORISTAS = {_norm(k): v for k, v in _MOT.items()}
+
+def carregar_motoristas_banco() -> dict:
+    try:
+        inicializar_banco()
+        if not listar_motoristas(somente_ativos=False):
+            total = importar_motoristas(MOTORISTAS)
+            print(f"✔ {total} motoristas importados para o banco local")
+        dados = listar_motoristas()
+        print(f"✔ {len(dados)} motoristas carregados do banco local")
+        return dados
+    except Exception as e:
+        print(f"⚠ Erro ao carregar motoristas do banco: {e}")
+        return MOTORISTAS
 
 def get_motorista(placa): return MOTORISTAS.get(_norm(placa), "")
 def limpar_cnpj(v): return "".join(filter(str.isdigit, str(v)))
@@ -336,8 +319,11 @@ class App:
     # ── Carregamento em background ────────────────────────────────────────────
     def _carregar_dados_bg(self):
         import time; time.sleep(0.4)
+        global MOTORISTAS
         self.cnpj_cetesb = carregar_cnpj_cetesb()
         self.residuos    = carregar_residuos()
+        MOTORISTAS       = carregar_motoristas_banco()
+        self.grupos_prefixo.update(listar_prefixos_residuos())
         self.root.after(0, self._atualizar_apos_carga)
 
     def _atualizar_apos_carga(self):
@@ -458,32 +444,58 @@ class App:
         tk.Entry(add, textvariable=self.var_cnpj_novo, width=18, bg="#F8F9FA",
                  relief="flat", highlightbackground=COR_BORDA,
                  highlightthickness=1, font=("Segoe UI",9)).pack(side="left", padx=6)
-        tk.Label(add, text="Código CETESB:", bg=COR_CARD, fg=COR_TEXTO,
+        tk.Label(add, text="Gerador CNPJCPF:", bg=COR_CARD, fg=COR_TEXTO,
                  font=("Segoe UI",9,"bold")).pack(side="left")
         tk.Entry(add, textvariable=self.var_cetesb_novo, width=10, bg="#F8F9FA",
                  relief="flat", highlightbackground=COR_BORDA,
                  highlightthickness=1, font=("Segoe UI",9)).pack(side="left", padx=6)
-        tk.Button(add, text="+ Adicionar", bg=COR_OK, fg="white", relief="flat",
+        tk.Button(add, text="Salvar", bg=COR_OK, fg="white", relief="flat",
                   font=("Segoe UI",9), cursor="hand2", padx=8, pady=3,
                   command=self._adicionar_cnpj).pack(side="left")
+        tk.Button(add, text="Apagar", bg=COR_ERR, fg="white", relief="flat",
+                  font=("Segoe UI",9), cursor="hand2", padx=8, pady=3,
+                  command=self._apagar_cnpj).pack(side="left", padx=(6,0))
 
     def _render_cnpj_resumo(self):
         total = len(self.cnpj_cetesb)
         self.lbl_cnpj_total.configure(
-            text=f"✔ {total} CNPJs carregados de '{ARQUIVO_CNPJ}'  — adicione mais abaixo se necessário",
+            text=f"✔ {total} CNPJs carregados do banco local  — salve ou apague cadastros abaixo",
             fg=COR_OK)
 
     def _adicionar_cnpj(self):
         cnpj = limpar_cnpj(self.var_cnpj_novo.get())
         cod  = self.var_cetesb_novo.get().strip()
         if not cnpj or not cod:
-            messagebox.showwarning("Atenção", "Preencha CNPJ e Código CETESB.")
+            messagebox.showwarning("Atenção", "Preencha CNPJ e Código Gerador CNPJCPF.")
             return
-        self.cnpj_cetesb[cnpj] = cod
-        self.var_cnpj_novo.set("")
-        self.var_cetesb_novo.set("")
-        self._render_cnpj_resumo()
-        self._log(f"✔ CNPJ {cnpj} → {cod} adicionado", "ok")
+        try:
+            salvar_cnpj(cnpj, cod)
+            self.cnpj_cetesb = listar_cnpjs()
+            self.var_cnpj_novo.set("")
+            self.var_cetesb_novo.set("")
+            self._render_cnpj_resumo()
+            self._log(f"✔ CNPJ {cnpj} → {cod} salvo no banco", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível salvar o CNPJ:\n{e}")
+            self._log(f"✖ Erro ao salvar CNPJ {cnpj}: {e}", "er")
+
+    def _apagar_cnpj(self):
+        cnpj = limpar_cnpj(self.var_cnpj_novo.get())
+        if not cnpj:
+            messagebox.showwarning("Atenção", "Informe o CNPJ que deseja apagar.")
+            return
+        if not messagebox.askyesno("Confirmar", f"Apagar/desativar o CNPJ {cnpj}?"):
+            return
+        try:
+            apagar_cnpj(cnpj)
+            self.cnpj_cetesb = listar_cnpjs()
+            self.var_cnpj_novo.set("")
+            self.var_cetesb_novo.set("")
+            self._render_cnpj_resumo()
+            self._log(f"✔ CNPJ {cnpj} apagado/desativado", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível apagar o CNPJ:\n{e}")
+            self._log(f"✖ Erro ao apagar CNPJ {cnpj}: {e}", "er")
 
     def _sec_saida(self):
         c = self._card()
@@ -595,11 +607,21 @@ class App:
         lst = self.grupos_prefixo.setdefault(prefixo, [])
         if res_id not in lst:
             lst.append(res_id)
+            try:
+                salvar_prefixo_residuo(prefixo, res_id, len(lst))
+                self._log(f"✔ Prefixo {prefixo} → resíduo {res_id} salvo", "ok")
+            except Exception as e:
+                self._log(f"⚠ Não foi possível salvar prefixo {prefixo}: {e}", "av")
         self._render_grupos()
 
     def _rem_residuo(self, prefixo, res_id):
         lst = self.grupos_prefixo.get(prefixo, [])
         if res_id in lst: lst.remove(res_id)
+        try:
+            apagar_prefixo_residuo(prefixo, res_id)
+            self._log(f"✔ Prefixo {prefixo} → resíduo {res_id} removido", "ok")
+        except Exception as e:
+            self._log(f"⚠ Não foi possível remover prefixo {prefixo}: {e}", "av")
         self._render_grupos()
 
     # ── Browse ────────────────────────────────────────────────────────────────
