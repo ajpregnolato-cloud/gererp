@@ -729,42 +729,64 @@ class App:
         tk.Button(f, text="Abrir manutenção…", bg=COR_ACENT, fg="white",
                   relief="flat", font=("Segoe UI",9), cursor="hand2",
                   padx=12, pady=4, command=self._abrir_cadastros).pack(side="right")
-        tk.Button(f, text="Importar planilhas", bg=COR_PRIM, fg="white",
+        tk.Button(f, text="Importar resíduos…", bg=COR_PRIM, fg="white",
                   relief="flat", font=("Segoe UI",9), cursor="hand2",
-                  padx=12, pady=4, command=self._importar_planilhas_auxiliares
+                  padx=12, pady=4, command=self._importar_residuos_planilha
+                  ).pack(side="right", padx=(0, 8))
+        tk.Button(f, text="Importar CNPJs…", bg=COR_PRIM, fg="white",
+                  relief="flat", font=("Segoe UI",9), cursor="hand2",
+                  padx=12, pady=4, command=self._importar_cnpjs_planilha
                   ).pack(side="right", padx=(0, 8))
 
     def _abrir_cadastros(self):
         CadastroWindow(self)
 
-    def _caminho_base(self, arquivo):
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), arquivo)
+    def _importar_cnpjs_planilha(self):
+        self._importar_planilha_auxiliar(
+            tipo="CNPJs / Gerador CNPJCPF",
+            arquivo_padrao=ARQUIVO_CNPJ,
+            importador=importar_cnpjs_de_xlsx,
+            atualizar_grupos=False,
+        )
 
-    def _importar_planilhas_auxiliares(self):
+    def _importar_residuos_planilha(self):
+        self._importar_planilha_auxiliar(
+            tipo="resíduos",
+            arquivo_padrao=ARQUIVO_RESIDUOS,
+            importador=importar_residuos_de_xlsx,
+            atualizar_grupos=True,
+        )
+
+    def _importar_planilha_auxiliar(self, tipo, arquivo_padrao, importador, atualizar_grupos=False):
+        caminho = selecionar_arquivo(
+            modo="abrir",
+            titulo=f"Selecionar planilha de {tipo}",
+            ext="xlsx",
+        )
+        if not caminho:
+            return
         if not messagebox.askyesno(
             "Confirmar importação",
-            "Importar/atualizar CNPJs e resíduos das planilhas auxiliares para o banco?\n\n"
-            "Arquivos usados:\n"
-            f"• {ARQUIVO_CNPJ}\n"
-            f"• {ARQUIVO_RESIDUOS}",
+            f"Importar/atualizar {tipo} para o banco local?\n\n"
+            f"Planilha selecionada:\n{caminho}\n\n"
+            f"Arquivo esperado como referência: {arquivo_padrao}",
         ):
             return
         try:
-            caminho_cnpj = self._caminho_base(ARQUIVO_CNPJ)
-            caminho_residuos = self._caminho_base(ARQUIVO_RESIDUOS)
-            total_cnpjs = importar_cnpjs_de_xlsx(caminho_cnpj) if os.path.exists(caminho_cnpj) else 0
-            total_residuos = importar_residuos_de_xlsx(caminho_residuos) if os.path.exists(caminho_residuos) else 0
+            total = importador(caminho)
             self._recarregar_cadastros()
-            self._render_grupos()
-            self._log(f"✔ Importação concluída: {total_cnpjs} CNPJs | {total_residuos} resíduos", "ok")
+            if atualizar_grupos:
+                self._render_grupos()
+            self._log(f"✔ Importação de {tipo} concluída: {total} registro(s) de {caminho}", "ok")
             messagebox.showinfo(
                 "Importação concluída",
-                f"CNPJs importados/atualizados: {total_cnpjs}\n"
-                f"Resíduos importados/atualizados: {total_residuos}",
+                f"Tipo importado: {tipo}\n"
+                f"Registros importados/atualizados: {total}\n\n"
+                f"Planilha:\n{caminho}",
             )
         except Exception as e:
-            self._log(f"✖ Erro ao importar planilhas auxiliares: {e}", "er")
-            messagebox.showerror("Erro", f"Não foi possível importar as planilhas auxiliares:\n{e}")
+            self._log(f"✖ Erro ao importar {tipo} de {caminho}: {e}", "er")
+            messagebox.showerror("Erro", f"Não foi possível importar {tipo}:\n{e}")
 
     def _recarregar_cadastros(self):
         global MOTORISTAS

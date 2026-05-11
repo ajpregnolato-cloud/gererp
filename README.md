@@ -31,9 +31,9 @@ As alterações feitas nessa janela são salvas no `gererp.db` e passam a ser us
 
 ### Importar ou reimportar as bases auxiliares
 
-Se algum cadastro não aparecer no banco depois da primeira execução, use o botão **Importar planilhas** na seção **Cadastros do banco**. Ele importa/atualiza os dois arquivos auxiliares:
+Se algum cadastro não aparecer no banco depois da primeira execução, use os botões de importação na seção **Cadastros do banco**. Cada botão pede para você escolher o local exato da planilha antes de importar:
 
-- `cnpj_cetesb.xlsx`;
-- `Listagem_Residuos_Geral_02_04_26.xlsx`.
+- **Importar CNPJs…**: selecione a planilha de CNPJs e código Gerador CNPJCPF, normalmente `cnpj_cetesb.xlsx`;
+- **Importar resíduos…**: selecione a planilha de resíduos, normalmente `Listagem_Residuos_Geral_02_04_26.xlsx`.
 
-Esse botão pode ser usado novamente quando as planilhas auxiliares forem atualizadas.
+Os botões podem ser usados novamente quando qualquer uma das planilhas auxiliares for atualizada.
