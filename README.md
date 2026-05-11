@@ -37,3 +37,7 @@ Se algum cadastro não aparecer no banco depois da primeira execução, use os b
 - **Importar resíduos…**: selecione a planilha de resíduos, normalmente `Listagem_Residuos_Geral_02_04_26.xlsx`.
 
 Os botões podem ser usados novamente quando qualquer uma das planilhas auxiliares for atualizada. Durante a importação, o app mostra uma barra de avanço com percentual, linhas lidas e registros importados para indicar que a operação está em andamento.
+
+## Validações e busca na geração
+
+Antes de gerar a planilha de saída, os campos **Código-Destinador** e **Código-Transportador** são obrigatórios. Na seção **Grupos prefixo → resíduos**, o campo de seleção de resíduos permite digitar números ou letras para filtrar por código interno, código IBAMA ou descrição antes de adicionar o resíduo ao prefixo.

@@ -1010,19 +1010,35 @@ class App:
             tk.Label(bot, text="Adicionar:", bg="#F4F6F8", fg=COR_TEXTO,
                      font=("Segoe UI",9)).pack(side="left")
 
+            opcoes_residuos = [self._formatar_residuo_opcao(k) for k in res_keys]
             var_sel = tk.StringVar()
             combo = ttk.Combobox(bot, textvariable=var_sel, width=65,
-                                 font=("Segoe UI",9), state="readonly")
-            combo["values"] = [
-                f"{k}  |  {self.residuos[k]['ibama']}  —  {self.residuos[k]['descricao'][:45]}"
-                for k in res_keys
-            ]
+                                 font=("Segoe UI",9), state="normal")
+            combo["values"] = opcoes_residuos
             combo.pack(side="left", padx=6)
+            combo.bind("<KeyRelease>",
+                       lambda _e, c=combo, ops=opcoes_residuos: self._filtrar_residuos_combo(c, ops))
+            combo.bind("<FocusIn>",
+                       lambda _e, c=combo, ops=opcoes_residuos: c.configure(values=ops))
             tk.Button(bot, text="+ Adicionar", bg=COR_OK, fg="white",
                       relief="flat", font=("Segoe UI",9), cursor="hand2",
                       padx=8, pady=2,
                       command=lambda p=prefixo, v=var_sel: self._add_residuo(p, v)
                       ).pack(side="left")
+
+    def _formatar_residuo_opcao(self, res_id):
+        res = self.residuos[res_id]
+        return f"{res_id}  |  {res['ibama']}  —  {res['descricao'][:45]}"
+
+    def _filtrar_residuos_combo(self, combo, opcoes):
+        termo = combo.get().strip().lower()
+        if termo:
+            filtradas = [op for op in opcoes if termo in op.lower()]
+        else:
+            filtradas = opcoes
+        combo.configure(values=filtradas)
+        if filtradas:
+            combo.event_generate("<Down>")
 
     def _render_tags(self, prefixo):
         frame = self.tag_widgets.get(prefixo)
@@ -1051,6 +1067,9 @@ class App:
         val = var_sel.get()
         if not val: return
         res_id = val.split("  |  ")[0].strip()
+        if res_id not in self.residuos:
+            messagebox.showwarning("Atenção", "Selecione um resíduo válido da lista filtrada.")
+            return
         lst = self.grupos_prefixo.setdefault(prefixo, [])
         if res_id not in lst:
             lst.append(res_id)
@@ -1102,6 +1121,12 @@ class App:
     def _gerar(self):
         if self.df_entrada is None:
             messagebox.showwarning("Atenção", "Carregue o arquivo de entrada primeiro.")
+            return
+        if not self.var_cod_dest.get().strip():
+            messagebox.showwarning("Atenção", "Preencha o Código-Destinador.")
+            return
+        if not self.var_cod_transp.get().strip():
+            messagebox.showwarning("Atenção", "Preencha o Código-Transportador.")
             return
         if not self.var_saida.get().strip():
             messagebox.showwarning("Atenção", "Escolha o arquivo de saída.")
