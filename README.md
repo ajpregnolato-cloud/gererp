@@ -41,3 +41,7 @@ Os botões podem ser usados novamente quando qualquer uma das planilhas auxiliar
 ## Validações e busca na geração
 
 Antes de gerar a planilha de saída, os campos **Código-Destinador** e **Código-Transportador** são obrigatórios. Na seção **Grupos prefixo → resíduos**, o campo de seleção de resíduos permite digitar números ou letras para filtrar por código interno, código IBAMA ou descrição antes de adicionar o resíduo ao prefixo.
+
+## CNPJs sem Código CETESB
+
+Ao gerar a planilha de saída, registros cujo CNPJ não possua Código CETESB cadastrado são ignorados. Se houver pendências, o sistema cria automaticamente uma planilha separada ao lado da saída, com o sufixo `_CNPJs_sem_codigo.xlsx`, contendo CNPJ, quantidade de ocorrências, documentos, placas e motivo da exclusão.

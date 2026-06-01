@@ -141,6 +141,8 @@ COLUNAS_SAIDA = [
     "Código-ONU","Classe-de-Risco","Nome-de-Embarque","Grupo-de-Embalagem",
 ]
 
+COLUNAS_LOG_CNPJ = ["CNPJ-Gerador", "Ocorrências", "Documentos", "Placas", "Motivo"]
+
 COR_BG    = "#F0F2F5"
 COR_CARD  = "#FFFFFF"
 COR_PRIM  = "#1B4F8A"
@@ -152,9 +154,61 @@ COR_BORDA = "#D5D8DC"
 COR_TEXTO = "#1C2833"
 
 # ── Geração do Excel ──────────────────────────────────────────────────────────
+def caminho_log_cnpjs_sem_codigo(caminho_saida):
+    base, _ = os.path.splitext(caminho_saida)
+    return f"{base}_CNPJs_sem_codigo.xlsx"
+
+def gerar_log_cnpjs_sem_codigo(caminho_saida, pendencias):
+    """Gera uma planilha separada com CNPJs ignorados por falta de Código CETESB."""
+    caminho_log = caminho_log_cnpjs_sem_codigo(caminho_saida)
+    if not pendencias:
+        if os.path.exists(caminho_log):
+            os.remove(caminho_log)
+        return ""
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "CNPJs sem Código CETESB"
+
+    h_font = Font(name="Arial", bold=True, color="FFFFFF", size=10)
+    h_fill = PatternFill("solid", start_color="C0392B")
+    c_font = Font(name="Arial", size=10)
+    align = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    thin = Side(style="thin", color="BFBFBF")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    for ci, coluna in enumerate(COLUNAS_LOG_CNPJ, 1):
+        cell = ws.cell(row=1, column=ci, value=coluna)
+        cell.font = h_font
+        cell.fill = h_fill
+        cell.alignment = align
+        cell.border = border
+
+    for ri, pendencia in enumerate(sorted(pendencias.values(), key=lambda item: item["cnpj"]), 2):
+        valores = [
+            pendencia["cnpj"] or "(CNPJ vazio)",
+            pendencia["ocorrencias"],
+            ", ".join(sorted(pendencia["documentos"])),
+            ", ".join(sorted(pendencia["placas"])),
+            "CNPJ sem Código CETESB cadastrado",
+        ]
+        for ci, valor in enumerate(valores, 1):
+            cell = ws.cell(row=ri, column=ci, value=valor)
+            cell.font = c_font
+            cell.alignment = align
+            cell.border = border
+
+    larguras = [20, 12, 48, 28, 42]
+    for ci, largura in enumerate(larguras, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = largura
+    ws.freeze_panes = "A2"
+    wb.save(caminho_log)
+    return caminho_log
+
 def gerar_excel(df_entrada, grupos_prefixo, cnpj_cetesb, residuos,
                 cod_dest, cod_transp, caminho):
     linhas, avisos = [], []
+    cnpjs_sem_codigo = {}
 
     cols = list(df_entrada.columns)
     col_cnpj  = next((c for c in cols if "cnpj" in c.lower()), cols[0])
@@ -168,13 +222,22 @@ def gerar_excel(df_entrada, grupos_prefixo, cnpj_cetesb, residuos,
         prefixo   = get_prefixo(doc)
         res_ids   = grupos_prefixo.get(prefixo, [])
 
+        cod_cetesb = cnpj_cetesb.get(cnpj_raw, "")
+        if not cod_cetesb:
+            pendencia = cnpjs_sem_codigo.setdefault(cnpj_raw, {
+                "cnpj": cnpj_raw, "ocorrencias": 0, "documentos": set(), "placas": set(),
+            })
+            pendencia["ocorrencias"] += 1
+            if doc:
+                pendencia["documentos"].add(doc)
+            if placa:
+                pendencia["placas"].add(placa)
+            avisos.append(f"CNPJ '{cnpj_raw or '(vazio)'}' sem Código-CETESB → ignorado")
+            continue
+
         if not res_ids:
             avisos.append(f"Doc '{doc}': prefixo '{prefixo}' sem resíduos → ignorado")
             continue
-
-        cod_cetesb = cnpj_cetesb.get(cnpj_raw, "")
-        if not cod_cetesb:
-            avisos.append(f"CNPJ '{cnpj_raw}' sem Código-CETESB")
 
         for res_id in res_ids:
             res = residuos.get(res_id, {})
@@ -210,8 +273,14 @@ def gerar_excel(df_entrada, grupos_prefixo, cnpj_cetesb, residuos,
                 "Grupo-de-Embalagem":   "" if classe_raw == "II" else res["grupo_embalagem"],
             })
 
+    caminho_log = gerar_log_cnpjs_sem_codigo(caminho, cnpjs_sem_codigo)
+    if caminho_log:
+        avisos.append(f"Log de CNPJs sem Código-CETESB salvo em: {caminho_log}")
+
     if not linhas:
-        return [], avisos
+        if os.path.exists(caminho):
+            os.remove(caminho)
+        return [], avisos, caminho_log
 
     df = pd.DataFrame(linhas)[COLUNAS_SAIDA]
     wb = openpyxl.Workbook()
@@ -257,7 +326,7 @@ def gerar_excel(df_entrada, grupos_prefixo, cnpj_cetesb, residuos,
     ws.row_dimensions[1].height = 30
     ws.freeze_panes = "A2"
     wb.save(caminho)
-    return linhas, avisos
+    return linhas, avisos, caminho_log
 
 # ── Seletor de arquivo via PowerShell (evita bug tkinter 3.13/Windows) ────────
 def selecionar_arquivo(modo="abrir", titulo="Selecionar", ext="xlsx"):
@@ -1139,7 +1208,7 @@ class App:
 
     def _thread_gerar(self):
         try:
-            linhas, avisos = gerar_excel(
+            linhas, avisos, caminho_log = gerar_excel(
                 self.df_entrada, self.grupos_prefixo, self.cnpj_cetesb,
                 self.residuos, self.var_cod_dest.get().strip(),
                 self.var_cod_transp.get().strip(), self.var_saida.get().strip()
@@ -1148,12 +1217,21 @@ class App:
             if linhas:
                 self._log(f"✔ {len(linhas)} linhas geradas!", "ok")
                 self._log(f"✔ Salvo em: {self.var_saida.get()}", "ok")
+                if caminho_log:
+                    self._log(f"⚠ Log de CNPJs sem código: {caminho_log}", "av")
                 self.root.after(0, lambda: messagebox.showinfo("Concluído!",
-                    f"Planilha gerada!\n\n• {len(linhas)} linhas\n• {len(avisos)} avisos"))
+                    f"Planilha gerada!\n\n• {len(linhas)} linhas\n• {len(avisos)} avisos"
+                    + (f"\n• Log de CNPJs sem código: {caminho_log}" if caminho_log else "")))
                 self.root.after(0, lambda: self.lbl_status.configure(
                     text=f"✔ {len(linhas)} linhas", fg=COR_OK))
             else:
                 self._log("✖ Nenhuma linha gerada.", "er")
+                if caminho_log:
+                    self._log(f"⚠ Log de CNPJs sem código: {caminho_log}", "av")
+                    self.root.after(0, lambda: messagebox.showwarning(
+                        "Nenhuma linha gerada",
+                        f"Nenhuma linha foi incluída na saída.\n\n"
+                        f"Consulte o log de CNPJs sem código:\n{caminho_log}"))
                 self.root.after(0, lambda: self.lbl_status.configure(
                     text="Sem dados", fg=COR_ERR))
         except Exception as e:
