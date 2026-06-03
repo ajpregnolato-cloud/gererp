@@ -10,89 +10,65 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+from database import (
+    apagar_cnpj,
+    apagar_motorista,
+    apagar_residuo,
+    exportar_cnpjs_para_xlsx,
+    importar_cnpjs_de_xlsx,
+    importar_motoristas,
+    importar_residuos_de_xlsx,
+    inicializar_banco,
+    listar_cnpjs,
+    listar_motoristas,
+    listar_prefixos_residuos,
+    listar_residuos,
+    listar_residuos_completos,
+    salvar_cnpj,
+    salvar_motorista,
+    salvar_residuo,
+    salvar_prefixo_residuo,
+    apagar_prefixo_residuo,
+)
+
 # ── Arquivo externo de CNPJs ──────────────────────────────────────────────────
 ARQUIVO_CNPJ = "cnpj_cetesb.xlsx"   # mesmo diretório do script
 
 def carregar_cnpj_cetesb() -> dict:
     caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), ARQUIVO_CNPJ)
     try:
-        wb = openpyxl.load_workbook(caminho, read_only=True, data_only=True)
-        ws = wb.active
-        # Detecta colunas pelo cabeçalho (compatível com 2 ou 3 colunas)
-        header = next(ws.iter_rows(max_row=1, values_only=True))
-        headers = [str(h).strip().lower() if h else "" for h in header]
-        col_cnpj = next((i for i, h in enumerate(headers) if "cnpj" in h and "gerador" not in h), 0)
-        col_cod  = next((i for i, h in enumerate(headers) if "gerador" in h or "cnpjcpf" in h), 1)
-
-        dados = {}
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if not row or len(row) <= max(col_cnpj, col_cod): continue
-            cnpj = str(row[col_cnpj]).strip() if row[col_cnpj] else ""
-            raw  = row[col_cod]
-            cod  = str(int(raw)) if raw and isinstance(raw, (int, float)) else str(raw).strip() if raw else ""
-            if cnpj and cod and cnpj not in ("None", "nan", ""):
-                dados[cnpj] = cod
-        print(f"✔ {len(dados)} CNPJs carregados de '{caminho}'")
+        inicializar_banco()
+        if not listar_cnpjs(somente_ativos=False):
+            if os.path.exists(caminho):
+                total = importar_cnpjs_de_xlsx(caminho)
+                print(f"✔ {total} CNPJs importados para o banco a partir de '{caminho}'")
+            else:
+                print(f"⚠ '{caminho}' não encontrado para importação inicial.")
+        dados = listar_cnpjs()
+        print(f"✔ {len(dados)} CNPJs carregados do banco local")
         return dados
-    except FileNotFoundError:
-        print(f"⚠ '{caminho}' não encontrado.")
-        return {}
     except Exception as e:
-        print(f"⚠ Erro ao carregar CNPJs: {e}")
+        print(f"⚠ Erro ao carregar CNPJs do banco: {e}")
         return {}
 
 # ── Mapeamento de resíduos ────────────────────────────────────────────────────
 ARQUIVO_RESIDUOS = "Listagem_Residuos_Geral_02_04_26.xlsx"
 
 def carregar_residuos() -> dict:
-    import datetime
     caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), ARQUIVO_RESIDUOS)
     try:
-        wb = openpyxl.load_workbook(caminho, read_only=True, data_only=True)
-        ws = wb.active
-        residuos = {}
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if not any(row): continue
-            ibama_raw   = row[0]
-            peso        = str(row[1]).strip() if row[1] else "Kg"
-            estado      = str(row[2]).strip() if row[2] else ""
-            classe      = str(row[3]).strip() if row[3] else ""
-            acond       = str(row[4]).strip() if row[4] else ""
-            trat        = str(row[5]).strip().replace("\n", " ") if row[5] else ""
-            cod_onu     = str(int(row[6])) if row[6] and row[6] != "-" and isinstance(row[6], (int, float)) else ""
-            cl_risco    = str(int(row[7])) if row[7] and row[7] != "-" and isinstance(row[7], (int, float)) else ""
-            nome_emb    = str(row[8]).strip() if row[8] and row[8] != "-" else ""
-            grupo_emb   = str(row[9]).strip() if row[9] and row[9] != "-" else ""
-            cod_interno = str(row[10]).strip() if row[10] else ""
-            descricao   = str(row[11]).strip() if row[11] else ""
-
-            if not cod_interno: continue
-
-            # Reconstrói IBAMA a partir de data
-            if isinstance(ibama_raw, datetime.datetime):
-                d = f"{ibama_raw.day:02d}"
-                m = f"{ibama_raw.month:02d}"
-                y = str(ibama_raw.year)[2:]
-                ibama = f"{d}{m}{y}(*)" if classe == "I" else f"{d}{m}{y}"
+        inicializar_banco()
+        if not listar_residuos(somente_ativos=False):
+            if os.path.exists(caminho):
+                total = importar_residuos_de_xlsx(caminho)
+                print(f"✔ {total} resíduos importados para o banco a partir de '{caminho}'")
             else:
-                ibama = str(ibama_raw).strip().replace(" ", "")
-                if classe == "I" and not ibama.endswith("(*)"):
-                    ibama += "(*)"
-
-            residuos[cod_interno] = {
-                "ibama": ibama, "classe": classe, "descricao": descricao,
-                "estado_fisico": estado, "acondicionamento": acond,
-                "tratamento": trat, "cod_onu": cod_onu,
-                "classe_risco": cl_risco, "nome_embarque": nome_emb,
-                "grupo_embalagem": grupo_emb, "cod_interno": cod_interno,
-            }
-        print(f"✔ {len(residuos)} resíduos carregados de '{caminho}'")
+                print(f"⚠ '{caminho}' não encontrado para importação inicial.")
+        residuos = listar_residuos()
+        print(f"✔ {len(residuos)} resíduos carregados do banco local")
         return residuos
-    except FileNotFoundError:
-        print(f"⚠ '{caminho}' não encontrado.")
-        return {}
     except Exception as e:
-        print(f"⚠ Erro ao carregar resíduos: {e}")
+        print(f"⚠ Erro ao carregar resíduos do banco: {e}")
         return {}
 
 # ── Motoristas ────────────────────────────────────────────────────────────────
@@ -135,6 +111,19 @@ _MOT = {
 }
 MOTORISTAS = {_norm(k): v for k, v in _MOT.items()}
 
+def carregar_motoristas_banco() -> dict:
+    try:
+        inicializar_banco()
+        if not listar_motoristas(somente_ativos=False):
+            total = importar_motoristas(MOTORISTAS)
+            print(f"✔ {total} motoristas importados para o banco local")
+        dados = listar_motoristas()
+        print(f"✔ {len(dados)} motoristas carregados do banco local")
+        return dados
+    except Exception as e:
+        print(f"⚠ Erro ao carregar motoristas do banco: {e}")
+        return MOTORISTAS
+
 def get_motorista(placa): return MOTORISTAS.get(_norm(placa), "")
 def limpar_cnpj(v): return "".join(filter(str.isdigit, str(v)))
 def get_prefixo(doc):
@@ -153,6 +142,8 @@ COLUNAS_SAIDA = [
     "Código-ONU","Classe-de-Risco","Nome-de-Embarque","Grupo-de-Embalagem",
 ]
 
+COLUNAS_LOG_CNPJ = ["CNPJ-Gerador", "Ocorrências", "Documentos", "Placas", "Motivo"]
+
 COR_BG    = "#F0F2F5"
 COR_CARD  = "#FFFFFF"
 COR_PRIM  = "#1B4F8A"
@@ -164,9 +155,61 @@ COR_BORDA = "#D5D8DC"
 COR_TEXTO = "#1C2833"
 
 # ── Geração do Excel ──────────────────────────────────────────────────────────
+def caminho_log_cnpjs_sem_codigo(caminho_saida):
+    base, _ = os.path.splitext(caminho_saida)
+    return f"{base}_CNPJs_sem_codigo.xlsx"
+
+def gerar_log_cnpjs_sem_codigo(caminho_saida, pendencias):
+    """Gera uma planilha separada com CNPJs ignorados por falta de Código CETESB."""
+    caminho_log = caminho_log_cnpjs_sem_codigo(caminho_saida)
+    if not pendencias:
+        if os.path.exists(caminho_log):
+            os.remove(caminho_log)
+        return ""
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "CNPJs sem Código CETESB"
+
+    h_font = Font(name="Arial", bold=True, color="FFFFFF", size=10)
+    h_fill = PatternFill("solid", start_color="C0392B")
+    c_font = Font(name="Arial", size=10)
+    align = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    thin = Side(style="thin", color="BFBFBF")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    for ci, coluna in enumerate(COLUNAS_LOG_CNPJ, 1):
+        cell = ws.cell(row=1, column=ci, value=coluna)
+        cell.font = h_font
+        cell.fill = h_fill
+        cell.alignment = align
+        cell.border = border
+
+    for ri, pendencia in enumerate(sorted(pendencias.values(), key=lambda item: item["cnpj"]), 2):
+        valores = [
+            pendencia["cnpj"] or "(CNPJ vazio)",
+            pendencia["ocorrencias"],
+            ", ".join(sorted(pendencia["documentos"])),
+            ", ".join(sorted(pendencia["placas"])),
+            "CNPJ sem Código CETESB cadastrado",
+        ]
+        for ci, valor in enumerate(valores, 1):
+            cell = ws.cell(row=ri, column=ci, value=valor)
+            cell.font = c_font
+            cell.alignment = align
+            cell.border = border
+
+    larguras = [20, 12, 48, 28, 42]
+    for ci, largura in enumerate(larguras, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = largura
+    ws.freeze_panes = "A2"
+    wb.save(caminho_log)
+    return caminho_log
+
 def gerar_excel(df_entrada, grupos_prefixo, cnpj_cetesb, residuos,
                 cod_dest, cod_transp, caminho):
     linhas, avisos = [], []
+    cnpjs_sem_codigo = {}
 
     cols = list(df_entrada.columns)
     col_cnpj  = next((c for c in cols if "cnpj" in c.lower()), cols[0])
@@ -180,13 +223,22 @@ def gerar_excel(df_entrada, grupos_prefixo, cnpj_cetesb, residuos,
         prefixo   = get_prefixo(doc)
         res_ids   = grupos_prefixo.get(prefixo, [])
 
+        cod_cetesb = cnpj_cetesb.get(cnpj_raw, "")
+        if not cod_cetesb:
+            pendencia = cnpjs_sem_codigo.setdefault(cnpj_raw, {
+                "cnpj": cnpj_raw, "ocorrencias": 0, "documentos": set(), "placas": set(),
+            })
+            pendencia["ocorrencias"] += 1
+            if doc:
+                pendencia["documentos"].add(doc)
+            if placa:
+                pendencia["placas"].add(placa)
+            avisos.append(f"CNPJ '{cnpj_raw or '(vazio)'}' sem Código-CETESB → ignorado")
+            continue
+
         if not res_ids:
             avisos.append(f"Doc '{doc}': prefixo '{prefixo}' sem resíduos → ignorado")
             continue
-
-        cod_cetesb = cnpj_cetesb.get(cnpj_raw, "")
-        if not cod_cetesb:
-            avisos.append(f"CNPJ '{cnpj_raw}' sem Código-CETESB")
 
         for res_id in res_ids:
             res = residuos.get(res_id, {})
@@ -222,8 +274,14 @@ def gerar_excel(df_entrada, grupos_prefixo, cnpj_cetesb, residuos,
                 "Grupo-de-Embalagem":   "" if classe_raw == "II" else res["grupo_embalagem"],
             })
 
+    caminho_log = gerar_log_cnpjs_sem_codigo(caminho, cnpjs_sem_codigo)
+    if caminho_log:
+        avisos.append(f"Log de CNPJs sem Código-CETESB salvo em: {caminho_log}")
+
     if not linhas:
-        return [], avisos
+        if os.path.exists(caminho):
+            os.remove(caminho)
+        return [], avisos, caminho_log
 
     df = pd.DataFrame(linhas)[COLUNAS_SAIDA]
     wb = openpyxl.Workbook()
@@ -269,7 +327,7 @@ def gerar_excel(df_entrada, grupos_prefixo, cnpj_cetesb, residuos,
     ws.row_dimensions[1].height = 30
     ws.freeze_panes = "A2"
     wb.save(caminho)
-    return linhas, avisos
+    return linhas, avisos, caminho_log
 
 # ── Seletor de arquivo via PowerShell (evita bug tkinter 3.13/Windows) ────────
 def selecionar_arquivo(modo="abrir", titulo="Selecionar", ext="xlsx"):
@@ -305,6 +363,357 @@ def selecionar_arquivo(modo="abrir", titulo="Selecionar", ext="xlsx"):
     except Exception:
         return ""
 
+# ── Janelas de manutenção dos cadastros ───────────────────────────────────────
+class CadastroWindow:
+    def __init__(self, app):
+        self.app = app
+        self.win = tk.Toplevel(app.root)
+        self.win.title("Manutenção de Cadastros")
+        self.win.geometry("980x680")
+        self.win.configure(bg=COR_BG)
+        self.win.transient(app.root)
+
+        self.nb = ttk.Notebook(self.win)
+        self.nb.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self._build_cnpjs()
+        self._build_motoristas()
+        self._build_residuos()
+
+        self.win.protocol("WM_DELETE_WINDOW", self._fechar)
+
+    def _tab(self, nome):
+        frame = tk.Frame(self.nb, bg=COR_CARD)
+        self.nb.add(frame, text=nome)
+        return frame
+
+    def _tree(self, parent, columns, headings, widths):
+        box = tk.Frame(parent, bg=COR_CARD)
+        box.pack(fill="both", expand=True, padx=10, pady=10)
+        tree = ttk.Treeview(box, columns=columns, show="headings", height=12)
+        ysb = ttk.Scrollbar(box, orient="vertical", command=tree.yview)
+        xsb = ttk.Scrollbar(box, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=ysb.set, xscrollcommand=xsb.set)
+        for col, head, width in zip(columns, headings, widths):
+            tree.heading(col, text=head)
+            tree.column(col, width=width, anchor="w")
+        tree.grid(row=0, column=0, sticky="nsew")
+        ysb.grid(row=0, column=1, sticky="ns")
+        xsb.grid(row=1, column=0, sticky="ew")
+        box.rowconfigure(0, weight=1)
+        box.columnconfigure(0, weight=1)
+        return tree
+
+    def _form_entry(self, parent, row, label, var, width=34):
+        tk.Label(parent, text=label, bg=COR_CARD, fg=COR_TEXTO,
+                 font=("Segoe UI", 9, "bold"), anchor="w").grid(
+            row=row, column=0, sticky="w", padx=(0, 8), pady=4)
+        ent = tk.Entry(parent, textvariable=var, width=width, bg="#F8F9FA",
+                       relief="flat", highlightbackground=COR_BORDA,
+                       highlightthickness=1, font=("Segoe UI", 9))
+        ent.grid(row=row, column=1, sticky="ew", pady=4)
+        return ent
+
+    def _buttons(self, parent, novo, salvar, apagar):
+        btns = tk.Frame(parent, bg=COR_CARD)
+        btns.grid(row=99, column=0, columnspan=4, sticky="w", pady=(8, 0))
+        tk.Button(btns, text="Novo/Limpar", bg=COR_ACENT, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3,
+                  command=novo).pack(side="left")
+        tk.Button(btns, text="Salvar", bg=COR_OK, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3,
+                  command=salvar).pack(side="left", padx=6)
+        tk.Button(btns, text="Apagar", bg=COR_ERR, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3,
+                  command=apagar).pack(side="left")
+
+    # CNPJs --------------------------------------------------------------------
+    def _build_cnpjs(self):
+        tab = self._tab("CNPJs")
+        self.tree_cnpj = self._tree(
+            tab, ("cnpj", "codigo"), ("CNPJ", "Gerador CNPJCPF"), (210, 160)
+        )
+        self.tree_cnpj.bind("<<TreeviewSelect>>", self._selecionar_cnpj)
+
+        form = tk.Frame(tab, bg=COR_CARD)
+        form.pack(fill="x", padx=10, pady=(0, 10))
+        form.columnconfigure(1, weight=1)
+        self.var_cad_cnpj = tk.StringVar()
+        self.var_cad_codigo = tk.StringVar()
+        self._form_entry(form, 0, "CNPJ", self.var_cad_cnpj)
+        self._form_entry(form, 1, "Gerador CNPJCPF", self.var_cad_codigo)
+        self._buttons(form, self._limpar_cnpj, self._salvar_cnpj_cadastro, self._apagar_cnpj_cadastro)
+        tk.Button(form, text="Exportar CNPJs...", bg=COR_PRIM, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3,
+                  command=self._exportar_cnpjs_cadastro).grid(
+                  row=99, column=3, sticky="e", padx=(8, 0), pady=(8, 0))
+        self._refresh_cnpjs()
+
+    def _refresh_cnpjs(self):
+        for item in self.tree_cnpj.get_children():
+            self.tree_cnpj.delete(item)
+        for cnpj, codigo in listar_cnpjs().items():
+            self.tree_cnpj.insert("", "end", values=(cnpj, codigo))
+
+    def _selecionar_cnpj(self, _event=None):
+        sel = self.tree_cnpj.selection()
+        if not sel:
+            return
+        cnpj, codigo = self.tree_cnpj.item(sel[0], "values")
+        self.var_cad_cnpj.set(cnpj)
+        self.var_cad_codigo.set(codigo)
+
+    def _limpar_cnpj(self):
+        self.var_cad_cnpj.set("")
+        self.var_cad_codigo.set("")
+        self.tree_cnpj.selection_remove(self.tree_cnpj.selection())
+
+    def _exportar_cnpjs_cadastro(self):
+        caminho = selecionar_arquivo(
+            modo="salvar",
+            titulo="Exportar CNPJs e códigos CETESB",
+            ext="xlsx",
+        )
+        if not caminho:
+            return
+        try:
+            total = exportar_cnpjs_para_xlsx(caminho)
+            self.app._log(f"✔ {total} CNPJs exportados para: {caminho}", "ok")
+            messagebox.showinfo(
+                "Exportação concluída",
+                f"CNPJs exportados: {total}\n\nArquivo:\n{caminho}",
+                parent=self.win,
+            )
+        except Exception as e:
+            self.app._log(f"✖ Erro ao exportar CNPJs: {e}", "er")
+            messagebox.showerror("Erro", f"Não foi possível exportar os CNPJs:\n{e}", parent=self.win)
+
+    def _salvar_cnpj_cadastro(self):
+        try:
+            salvar_cnpj(self.var_cad_cnpj.get(), self.var_cad_codigo.get())
+            self._refresh_cnpjs()
+            self.app._recarregar_cadastros()
+            self.app._log("✔ CNPJ salvo pela tela de cadastros", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível salvar o CNPJ:\n{e}", parent=self.win)
+
+    def _apagar_cnpj_cadastro(self):
+        cnpj = limpar_cnpj(self.var_cad_cnpj.get())
+        if not cnpj:
+            messagebox.showwarning("Atenção", "Informe ou selecione um CNPJ.", parent=self.win)
+            return
+        if not messagebox.askyesno("Confirmar", f"Apagar/desativar o CNPJ {cnpj}?", parent=self.win):
+            return
+        try:
+            apagar_cnpj(cnpj)
+            self._limpar_cnpj()
+            self._refresh_cnpjs()
+            self.app._recarregar_cadastros()
+            self.app._log("✔ CNPJ apagado pela tela de cadastros", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível apagar o CNPJ:\n{e}", parent=self.win)
+
+    # Motoristas ---------------------------------------------------------------
+    def _build_motoristas(self):
+        tab = self._tab("Motoristas")
+        self.tree_motorista = self._tree(
+            tab, ("placa", "motorista"), ("Placa", "Motorista"), (140, 260)
+        )
+        self.tree_motorista.bind("<<TreeviewSelect>>", self._selecionar_motorista)
+
+        form = tk.Frame(tab, bg=COR_CARD)
+        form.pack(fill="x", padx=10, pady=(0, 10))
+        form.columnconfigure(1, weight=1)
+        self.var_cad_placa = tk.StringVar()
+        self.var_cad_motorista = tk.StringVar()
+        self._form_entry(form, 0, "Placa", self.var_cad_placa)
+        self._form_entry(form, 1, "Motorista", self.var_cad_motorista)
+        self._buttons(form, self._limpar_motorista, self._salvar_motorista_cadastro, self._apagar_motorista_cadastro)
+        self._refresh_motoristas()
+
+    def _refresh_motoristas(self):
+        for item in self.tree_motorista.get_children():
+            self.tree_motorista.delete(item)
+        for placa, motorista in sorted(listar_motoristas().items()):
+            self.tree_motorista.insert("", "end", values=(placa, motorista))
+
+    def _selecionar_motorista(self, _event=None):
+        sel = self.tree_motorista.selection()
+        if not sel:
+            return
+        placa, motorista = self.tree_motorista.item(sel[0], "values")
+        self.var_cad_placa.set(placa)
+        self.var_cad_motorista.set(motorista)
+
+    def _limpar_motorista(self):
+        self.var_cad_placa.set("")
+        self.var_cad_motorista.set("")
+        self.tree_motorista.selection_remove(self.tree_motorista.selection())
+
+    def _salvar_motorista_cadastro(self):
+        try:
+            salvar_motorista(self.var_cad_placa.get(), self.var_cad_motorista.get())
+            self._refresh_motoristas()
+            self.app._recarregar_cadastros()
+            self.app._log("✔ Motorista salvo pela tela de cadastros", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível salvar o motorista:\n{e}", parent=self.win)
+
+    def _apagar_motorista_cadastro(self):
+        placa = self.var_cad_placa.get().strip()
+        if not placa:
+            messagebox.showwarning("Atenção", "Informe ou selecione uma placa.", parent=self.win)
+            return
+        if not messagebox.askyesno("Confirmar", f"Apagar/desativar a placa {placa}?", parent=self.win):
+            return
+        try:
+            apagar_motorista(placa)
+            self._limpar_motorista()
+            self._refresh_motoristas()
+            self.app._recarregar_cadastros()
+            self.app._log("✔ Motorista apagado pela tela de cadastros", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível apagar o motorista:\n{e}", parent=self.win)
+
+    # Resíduos -----------------------------------------------------------------
+    def _build_residuos(self):
+        tab = self._tab("Resíduos")
+        self.tree_residuo = self._tree(
+            tab,
+            ("codigo", "ibama", "classe", "descricao"),
+            ("Código Interno", "IBAMA", "Classe", "Descrição"),
+            (130, 120, 90, 520),
+        )
+        self.tree_residuo.bind("<<TreeviewSelect>>", self._selecionar_residuo)
+
+        busca = tk.Frame(tab, bg=COR_CARD)
+        busca.pack(fill="x", padx=10, pady=(0, 8))
+        tk.Label(busca, text="Pesquisar resíduo:", bg=COR_CARD, fg=COR_TEXTO,
+                 font=("Segoe UI", 9, "bold")).pack(side="left")
+        self.var_busca_residuo = tk.StringVar()
+        ent_busca = tk.Entry(busca, textvariable=self.var_busca_residuo, width=45, bg="#F8F9FA",
+                             relief="flat", highlightbackground=COR_BORDA, highlightthickness=1,
+                             font=("Segoe UI", 9))
+        ent_busca.pack(side="left", padx=6)
+        ent_busca.bind("<KeyRelease>", lambda _e: self._refresh_residuos())
+        tk.Button(busca, text="Limpar busca", bg=COR_ACENT, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=8, pady=2,
+                  command=self._limpar_busca_residuo).pack(side="left")
+
+        form = tk.Frame(tab, bg=COR_CARD)
+        form.pack(fill="x", padx=10, pady=(0, 10))
+        tk.Label(
+            form,
+            text="Use Novo resíduo para cadastrar; selecione um item da lista para corrigir ou apagar individualmente.",
+            bg=COR_CARD, fg=COR_MUTED, font=("Segoe UI", 9, "italic"),
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 6))
+        for col in (1, 3):
+            form.columnconfigure(col, weight=1)
+        self.res_vars = {campo: tk.StringVar() for campo in (
+            "codigo_interno", "codigo_ibama", "peso", "estado_fisico", "classe",
+            "acondicionamento", "tratamento", "codigo_onu", "classe_risco",
+            "nome_embarque", "grupo_embalagem", "descricao", "cod_res",
+            "cod_trat", "usuario",
+        )}
+        campos = [
+            ("codigo_interno", "Código Interno"), ("codigo_ibama", "IBAMA"),
+            ("peso", "Peso/Unidade"), ("estado_fisico", "Estado Físico"),
+            ("classe", "Classe"), ("acondicionamento", "Acondicionamento"),
+            ("tratamento", "Tratamento"), ("codigo_onu", "Código ONU"),
+            ("classe_risco", "Classe de Risco"), ("grupo_embalagem", "Grupo Embalagem"),
+            ("cod_res", "Cod Res"), ("cod_trat", "Cod Trat"),
+            ("usuario", "Usuário"), ("nome_embarque", "Nome Embarque"),
+            ("descricao", "Descrição"),
+        ]
+        for idx, (campo, label) in enumerate(campos):
+            row = (idx // 2) + 1
+            base_col = (idx % 2) * 2
+            tk.Label(form, text=label, bg=COR_CARD, fg=COR_TEXTO,
+                     font=("Segoe UI", 9, "bold"), anchor="w").grid(
+                row=row, column=base_col, sticky="w", padx=(0, 8), pady=3)
+            width = 54 if campo in {"descricao", "nome_embarque"} else 28
+            tk.Entry(form, textvariable=self.res_vars[campo], width=width, bg="#F8F9FA",
+                     relief="flat", highlightbackground=COR_BORDA, highlightthickness=1,
+                     font=("Segoe UI", 9)).grid(row=row, column=base_col+1, sticky="ew", pady=3)
+        btns = tk.Frame(form, bg=COR_CARD)
+        btns.grid(row=99, column=0, columnspan=4, sticky="w", pady=(8, 0))
+        tk.Button(btns, text="Novo resíduo", bg=COR_ACENT, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3,
+                  command=self._limpar_residuo).pack(side="left")
+        tk.Button(btns, text="Salvar/Corrigir resíduo", bg=COR_OK, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3,
+                  command=self._salvar_residuo_cadastro).pack(side="left", padx=6)
+        tk.Button(btns, text="Apagar resíduo selecionado", bg=COR_ERR, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3,
+                  command=self._apagar_residuo_cadastro).pack(side="left")
+        self._refresh_residuos()
+
+    def _refresh_residuos(self):
+        self.residuos_completos = listar_residuos_completos()
+        termo = getattr(self, "var_busca_residuo", tk.StringVar()).get().strip().lower()
+        for item in self.tree_residuo.get_children():
+            self.tree_residuo.delete(item)
+        for codigo, res in self.residuos_completos.items():
+            texto_busca = " ".join([
+                codigo, res.get("codigo_ibama", ""), res.get("classe", ""),
+                res.get("descricao", ""), res.get("tratamento", ""),
+            ]).lower()
+            if termo and termo not in texto_busca:
+                continue
+            self.tree_residuo.insert("", "end", values=(
+                codigo, res.get("codigo_ibama", ""), res.get("classe", ""), res.get("descricao", "")
+            ))
+
+    def _limpar_busca_residuo(self):
+        self.var_busca_residuo.set("")
+        self._refresh_residuos()
+
+    def _selecionar_residuo(self, _event=None):
+        sel = self.tree_residuo.selection()
+        if not sel:
+            return
+        codigo = self.tree_residuo.item(sel[0], "values")[0]
+        res = self.residuos_completos.get(codigo, {})
+        for campo, var in self.res_vars.items():
+            var.set(res.get(campo, ""))
+
+    def _limpar_residuo(self):
+        for var in self.res_vars.values():
+            var.set("")
+        self.tree_residuo.selection_remove(self.tree_residuo.selection())
+
+    def _salvar_residuo_cadastro(self):
+        try:
+            salvar_residuo({campo: var.get() for campo, var in self.res_vars.items()})
+            self._refresh_residuos()
+            self.app._recarregar_cadastros()
+            self.app._render_grupos()
+            self.app._log("✔ Resíduo salvo pela tela de cadastros", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível salvar o resíduo:\n{e}", parent=self.win)
+
+    def _apagar_residuo_cadastro(self):
+        codigo = self.res_vars["codigo_interno"].get().strip()
+        if not codigo:
+            messagebox.showwarning("Atenção", "Informe ou selecione um resíduo.", parent=self.win)
+            return
+        if not messagebox.askyesno("Confirmar", f"Apagar/desativar o resíduo {codigo}?", parent=self.win):
+            return
+        try:
+            apagar_residuo(codigo)
+            self._limpar_residuo()
+            self._refresh_residuos()
+            self.app._recarregar_cadastros()
+            self.app._render_grupos()
+            self.app._log("✔ Resíduo apagado pela tela de cadastros", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível apagar o resíduo:\n{e}", parent=self.win)
+
+    def _fechar(self):
+        self.app._recarregar_cadastros()
+        self.win.destroy()
+
+
 # ── Interface ─────────────────────────────────────────────────────────────────
 class App:
     def __init__(self, root):
@@ -336,8 +745,11 @@ class App:
     # ── Carregamento em background ────────────────────────────────────────────
     def _carregar_dados_bg(self):
         import time; time.sleep(0.4)
+        global MOTORISTAS
         self.cnpj_cetesb = carregar_cnpj_cetesb()
         self.residuos    = carregar_residuos()
+        MOTORISTAS       = carregar_motoristas_banco()
+        self.grupos_prefixo.update(listar_prefixos_residuos())
         self.root.after(0, self._atualizar_apos_carga)
 
     def _atualizar_apos_carga(self):
@@ -373,14 +785,16 @@ class App:
         self._sec_arquivo()
         self._secao("2  Campos fixos")
         self._sec_campos()
-        self._secao("3  CNPJs carregados")
+        self._secao("3  Cadastros do banco")
+        self._sec_cadastros()
+        self._secao("4  CNPJs carregados")
         self._sec_cnpj()
-        self._secao("4  Grupos prefixo → resíduos")
+        self._secao("5  Grupos prefixo → resíduos")
         self.frame_grupos = self._card()
         tk.Label(self.frame_grupos, text="Carregue o arquivo de entrada para detectar prefixos.",
                  bg=COR_CARD, fg=COR_MUTED, font=("Segoe UI",9,"italic")).pack(
                  padx=12, pady=10, anchor="w")
-        self._secao("5  Arquivo de saída")
+        self._secao("6  Arquivo de saída")
         self._sec_saida()
         self._sec_botao()
         self._secao("Log")
@@ -440,6 +854,159 @@ class App:
             e.insert(0, val); e.configure(state="readonly")
             e.grid(row=i, column=1, sticky="w", padx=8)
 
+    def _sec_cadastros(self):
+        c = self._card()
+        f = tk.Frame(c, bg=COR_CARD)
+        f.pack(fill="x", padx=12, pady=(10, 4))
+        tk.Label(f, text="Edite CNPJs, resíduos e placas/motoristas salvos no banco local.",
+                 bg=COR_CARD, fg=COR_TEXTO, font=("Segoe UI",9)).pack(side="left")
+        self.btn_cadastros = tk.Button(f, text="Abrir manutenção…", bg=COR_ACENT, fg="white",
+                                       relief="flat", font=("Segoe UI",9), cursor="hand2",
+                                       padx=12, pady=4, command=self._abrir_cadastros)
+        self.btn_cadastros.pack(side="right")
+        self.btn_import_residuos = tk.Button(
+            f, text="Importar resíduos…", bg=COR_PRIM, fg="white",
+            relief="flat", font=("Segoe UI",9), cursor="hand2",
+            padx=12, pady=4, command=self._importar_residuos_planilha,
+        )
+        self.btn_import_residuos.pack(side="right", padx=(0, 8))
+        self.btn_import_cnpjs = tk.Button(
+            f, text="Importar CNPJs…", bg=COR_PRIM, fg="white",
+            relief="flat", font=("Segoe UI",9), cursor="hand2",
+            padx=12, pady=4, command=self._importar_cnpjs_planilha,
+        )
+        self.btn_import_cnpjs.pack(side="right", padx=(0, 8))
+
+        prog = tk.Frame(c, bg=COR_CARD)
+        prog.pack(fill="x", padx=12, pady=(0, 10))
+        self.lbl_import_status = tk.Label(
+            prog, text="Importação: aguardando seleção de planilha",
+            bg=COR_CARD, fg=COR_MUTED, font=("Segoe UI",9), anchor="w",
+        )
+        self.lbl_import_status.pack(side="left")
+        self.import_prog = ttk.Progressbar(prog, mode="determinate", maximum=100, length=220)
+        self.import_prog.pack(side="right", padx=(8, 0))
+
+    def _abrir_cadastros(self):
+        CadastroWindow(self)
+
+    def _importar_cnpjs_planilha(self):
+        self._importar_planilha_auxiliar(
+            tipo="CNPJs / Gerador CNPJCPF",
+            arquivo_padrao=ARQUIVO_CNPJ,
+            importador=importar_cnpjs_de_xlsx,
+            atualizar_grupos=False,
+        )
+
+    def _importar_residuos_planilha(self):
+        self._importar_planilha_auxiliar(
+            tipo="resíduos",
+            arquivo_padrao=ARQUIVO_RESIDUOS,
+            importador=importar_residuos_de_xlsx,
+            atualizar_grupos=True,
+        )
+
+    def _importar_planilha_auxiliar(self, tipo, arquivo_padrao, importador, atualizar_grupos=False):
+        caminho = selecionar_arquivo(
+            modo="abrir",
+            titulo=f"Selecionar planilha de {tipo}",
+            ext="xlsx",
+        )
+        if not caminho:
+            return
+        if not messagebox.askyesno(
+            "Confirmar importação",
+            f"Importar/atualizar {tipo} para o banco local?\n\n"
+            f"Planilha selecionada:\n{caminho}\n\n"
+            f"Arquivo esperado como referência: {arquivo_padrao}",
+        ):
+            return
+
+        self._preparar_importacao(tipo)
+        threading.Thread(
+            target=self._thread_importar_planilha,
+            args=(tipo, caminho, importador, atualizar_grupos),
+            daemon=True,
+        ).start()
+
+    def _preparar_importacao(self, tipo):
+        self._set_import_buttons_state("disabled")
+        self.import_prog["value"] = 0
+        self.lbl_import_status.configure(
+            text=f"Importando {tipo}: 0% — iniciando leitura da planilha",
+            fg=COR_ACENT,
+        )
+        self._log(f"⏳ Importando {tipo}...", "inf")
+
+    def _set_import_buttons_state(self, state):
+        for nome in ("btn_import_cnpjs", "btn_import_residuos", "btn_cadastros"):
+            if hasattr(self, nome):
+                getattr(self, nome).configure(state=state)
+
+    def _thread_importar_planilha(self, tipo, caminho, importador, atualizar_grupos):
+        try:
+            def progress_callback(atual, total_linhas, importados):
+                self.root.after(
+                    0, self._atualizar_progresso_importacao,
+                    tipo, atual, total_linhas, importados,
+                )
+
+            total = importador(caminho, progress_callback=progress_callback)
+            self.root.after(
+                0, self._finalizar_importacao_sucesso,
+                tipo, caminho, total, atualizar_grupos,
+            )
+        except Exception as e:
+            self.root.after(0, self._finalizar_importacao_erro, tipo, caminho, e)
+
+    def _atualizar_progresso_importacao(self, tipo, atual, total_linhas, importados):
+        total_linhas = max(total_linhas, 1)
+        percentual = max(0, min(100, int((atual / total_linhas) * 100)))
+        self.import_prog["value"] = percentual
+        self.lbl_import_status.configure(
+            text=(
+                f"Importando {tipo}: {percentual}% "
+                f"({atual}/{total_linhas} linhas, {importados} registros)"
+            ),
+            fg=COR_ACENT,
+        )
+
+    def _finalizar_importacao_sucesso(self, tipo, caminho, total, atualizar_grupos):
+        self._recarregar_cadastros()
+        if atualizar_grupos:
+            self._render_grupos()
+        self.import_prog["value"] = 100
+        self.lbl_import_status.configure(
+            text=f"Importação de {tipo}: 100% — {total} registro(s) importado(s)/atualizado(s)",
+            fg=COR_OK,
+        )
+        self._set_import_buttons_state("normal")
+        self._log(f"✔ Importação de {tipo} concluída: {total} registro(s) de {caminho}", "ok")
+        messagebox.showinfo(
+            "Importação concluída",
+            f"Tipo importado: {tipo}\n"
+            f"Registros importados/atualizados: {total}\n\n"
+            f"Planilha:\n{caminho}",
+        )
+
+    def _finalizar_importacao_erro(self, tipo, caminho, erro):
+        self._set_import_buttons_state("normal")
+        self.lbl_import_status.configure(
+            text=f"Importação de {tipo} falhou — verifique o log",
+            fg=COR_ERR,
+        )
+        self._log(f"✖ Erro ao importar {tipo} de {caminho}: {erro}", "er")
+        messagebox.showerror("Erro", f"Não foi possível importar {tipo}:\n{erro}")
+
+    def _recarregar_cadastros(self):
+        global MOTORISTAS
+        self.cnpj_cetesb = listar_cnpjs()
+        self.residuos = listar_residuos()
+        MOTORISTAS = listar_motoristas()
+        self.grupos_prefixo.update(listar_prefixos_residuos())
+        if hasattr(self, "lbl_cnpj_total"):
+            self._render_cnpj_resumo()
+
     def _sec_cnpj(self):
         c = self._card()
         # Resumo compacto — sem listar todos
@@ -458,32 +1025,58 @@ class App:
         tk.Entry(add, textvariable=self.var_cnpj_novo, width=18, bg="#F8F9FA",
                  relief="flat", highlightbackground=COR_BORDA,
                  highlightthickness=1, font=("Segoe UI",9)).pack(side="left", padx=6)
-        tk.Label(add, text="Código CETESB:", bg=COR_CARD, fg=COR_TEXTO,
+        tk.Label(add, text="Gerador CNPJCPF:", bg=COR_CARD, fg=COR_TEXTO,
                  font=("Segoe UI",9,"bold")).pack(side="left")
         tk.Entry(add, textvariable=self.var_cetesb_novo, width=10, bg="#F8F9FA",
                  relief="flat", highlightbackground=COR_BORDA,
                  highlightthickness=1, font=("Segoe UI",9)).pack(side="left", padx=6)
-        tk.Button(add, text="+ Adicionar", bg=COR_OK, fg="white", relief="flat",
+        tk.Button(add, text="Salvar", bg=COR_OK, fg="white", relief="flat",
                   font=("Segoe UI",9), cursor="hand2", padx=8, pady=3,
                   command=self._adicionar_cnpj).pack(side="left")
+        tk.Button(add, text="Apagar", bg=COR_ERR, fg="white", relief="flat",
+                  font=("Segoe UI",9), cursor="hand2", padx=8, pady=3,
+                  command=self._apagar_cnpj).pack(side="left", padx=(6,0))
 
     def _render_cnpj_resumo(self):
         total = len(self.cnpj_cetesb)
         self.lbl_cnpj_total.configure(
-            text=f"✔ {total} CNPJs carregados de '{ARQUIVO_CNPJ}'  — adicione mais abaixo se necessário",
+            text=f"✔ {total} CNPJs carregados do banco local  — salve ou apague cadastros abaixo",
             fg=COR_OK)
 
     def _adicionar_cnpj(self):
         cnpj = limpar_cnpj(self.var_cnpj_novo.get())
         cod  = self.var_cetesb_novo.get().strip()
         if not cnpj or not cod:
-            messagebox.showwarning("Atenção", "Preencha CNPJ e Código CETESB.")
+            messagebox.showwarning("Atenção", "Preencha CNPJ e Código Gerador CNPJCPF.")
             return
-        self.cnpj_cetesb[cnpj] = cod
-        self.var_cnpj_novo.set("")
-        self.var_cetesb_novo.set("")
-        self._render_cnpj_resumo()
-        self._log(f"✔ CNPJ {cnpj} → {cod} adicionado", "ok")
+        try:
+            salvar_cnpj(cnpj, cod)
+            self.cnpj_cetesb = listar_cnpjs()
+            self.var_cnpj_novo.set("")
+            self.var_cetesb_novo.set("")
+            self._render_cnpj_resumo()
+            self._log(f"✔ CNPJ {cnpj} → {cod} salvo no banco", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível salvar o CNPJ:\n{e}")
+            self._log(f"✖ Erro ao salvar CNPJ {cnpj}: {e}", "er")
+
+    def _apagar_cnpj(self):
+        cnpj = limpar_cnpj(self.var_cnpj_novo.get())
+        if not cnpj:
+            messagebox.showwarning("Atenção", "Informe o CNPJ que deseja apagar.")
+            return
+        if not messagebox.askyesno("Confirmar", f"Apagar/desativar o CNPJ {cnpj}?"):
+            return
+        try:
+            apagar_cnpj(cnpj)
+            self.cnpj_cetesb = listar_cnpjs()
+            self.var_cnpj_novo.set("")
+            self.var_cetesb_novo.set("")
+            self._render_cnpj_resumo()
+            self._log(f"✔ CNPJ {cnpj} apagado/desativado", "ok")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível apagar o CNPJ:\n{e}")
+            self._log(f"✖ Erro ao apagar CNPJ {cnpj}: {e}", "er")
 
     def _sec_saida(self):
         c = self._card()
@@ -551,19 +1144,35 @@ class App:
             tk.Label(bot, text="Adicionar:", bg="#F4F6F8", fg=COR_TEXTO,
                      font=("Segoe UI",9)).pack(side="left")
 
+            opcoes_residuos = [self._formatar_residuo_opcao(k) for k in res_keys]
             var_sel = tk.StringVar()
             combo = ttk.Combobox(bot, textvariable=var_sel, width=65,
-                                 font=("Segoe UI",9), state="readonly")
-            combo["values"] = [
-                f"{k}  |  {self.residuos[k]['ibama']}  —  {self.residuos[k]['descricao'][:45]}"
-                for k in res_keys
-            ]
+                                 font=("Segoe UI",9), state="normal")
+            combo["values"] = opcoes_residuos
             combo.pack(side="left", padx=6)
+            combo.bind("<KeyRelease>",
+                       lambda _e, c=combo, ops=opcoes_residuos: self._filtrar_residuos_combo(c, ops))
+            combo.bind("<FocusIn>",
+                       lambda _e, c=combo, ops=opcoes_residuos: c.configure(values=ops))
             tk.Button(bot, text="+ Adicionar", bg=COR_OK, fg="white",
                       relief="flat", font=("Segoe UI",9), cursor="hand2",
                       padx=8, pady=2,
                       command=lambda p=prefixo, v=var_sel: self._add_residuo(p, v)
                       ).pack(side="left")
+
+    def _formatar_residuo_opcao(self, res_id):
+        res = self.residuos[res_id]
+        return f"{res_id}  |  {res['ibama']}  —  {res['descricao'][:45]}"
+
+    def _filtrar_residuos_combo(self, combo, opcoes):
+        termo = combo.get().strip().lower()
+        if termo:
+            filtradas = [op for op in opcoes if termo in op.lower()]
+        else:
+            filtradas = opcoes
+        combo.configure(values=filtradas)
+        if filtradas:
+            combo.event_generate("<Down>")
 
     def _render_tags(self, prefixo):
         frame = self.tag_widgets.get(prefixo)
@@ -592,14 +1201,27 @@ class App:
         val = var_sel.get()
         if not val: return
         res_id = val.split("  |  ")[0].strip()
+        if res_id not in self.residuos:
+            messagebox.showwarning("Atenção", "Selecione um resíduo válido da lista filtrada.")
+            return
         lst = self.grupos_prefixo.setdefault(prefixo, [])
         if res_id not in lst:
             lst.append(res_id)
+            try:
+                salvar_prefixo_residuo(prefixo, res_id, len(lst))
+                self._log(f"✔ Prefixo {prefixo} → resíduo {res_id} salvo", "ok")
+            except Exception as e:
+                self._log(f"⚠ Não foi possível salvar prefixo {prefixo}: {e}", "av")
         self._render_grupos()
 
     def _rem_residuo(self, prefixo, res_id):
         lst = self.grupos_prefixo.get(prefixo, [])
         if res_id in lst: lst.remove(res_id)
+        try:
+            apagar_prefixo_residuo(prefixo, res_id)
+            self._log(f"✔ Prefixo {prefixo} → resíduo {res_id} removido", "ok")
+        except Exception as e:
+            self._log(f"⚠ Não foi possível remover prefixo {prefixo}: {e}", "av")
         self._render_grupos()
 
     # ── Browse ────────────────────────────────────────────────────────────────
@@ -634,6 +1256,12 @@ class App:
         if self.df_entrada is None:
             messagebox.showwarning("Atenção", "Carregue o arquivo de entrada primeiro.")
             return
+        if not self.var_cod_dest.get().strip():
+            messagebox.showwarning("Atenção", "Preencha o Código-Destinador.")
+            return
+        if not self.var_cod_transp.get().strip():
+            messagebox.showwarning("Atenção", "Preencha o Código-Transportador.")
+            return
         if not self.var_saida.get().strip():
             messagebox.showwarning("Atenção", "Escolha o arquivo de saída.")
             return
@@ -645,7 +1273,7 @@ class App:
 
     def _thread_gerar(self):
         try:
-            linhas, avisos = gerar_excel(
+            linhas, avisos, caminho_log = gerar_excel(
                 self.df_entrada, self.grupos_prefixo, self.cnpj_cetesb,
                 self.residuos, self.var_cod_dest.get().strip(),
                 self.var_cod_transp.get().strip(), self.var_saida.get().strip()
@@ -654,12 +1282,21 @@ class App:
             if linhas:
                 self._log(f"✔ {len(linhas)} linhas geradas!", "ok")
                 self._log(f"✔ Salvo em: {self.var_saida.get()}", "ok")
+                if caminho_log:
+                    self._log(f"⚠ Log de CNPJs sem código: {caminho_log}", "av")
                 self.root.after(0, lambda: messagebox.showinfo("Concluído!",
-                    f"Planilha gerada!\n\n• {len(linhas)} linhas\n• {len(avisos)} avisos"))
+                    f"Planilha gerada!\n\n• {len(linhas)} linhas\n• {len(avisos)} avisos"
+                    + (f"\n• Log de CNPJs sem código: {caminho_log}" if caminho_log else "")))
                 self.root.after(0, lambda: self.lbl_status.configure(
                     text=f"✔ {len(linhas)} linhas", fg=COR_OK))
             else:
                 self._log("✖ Nenhuma linha gerada.", "er")
+                if caminho_log:
+                    self._log(f"⚠ Log de CNPJs sem código: {caminho_log}", "av")
+                    self.root.after(0, lambda: messagebox.showwarning(
+                        "Nenhuma linha gerada",
+                        f"Nenhuma linha foi incluída na saída.\n\n"
+                        f"Consulte o log de CNPJs sem código:\n{caminho_log}"))
                 self.root.after(0, lambda: self.lbl_status.configure(
                     text="Sem dados", fg=COR_ERR))
         except Exception as e:
