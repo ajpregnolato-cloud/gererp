@@ -210,6 +210,65 @@ def listar_cnpjs(db_path: str | Path | None = None, somente_ativos: bool = True)
         return {row["cnpj"]: row["codigo_gerador_cnpjcpf"] for row in conn.execute(sql)}
 
 
+def listar_cnpjs_completos(db_path: str | Path | None = None, somente_ativos: bool = True) -> list[dict[str, Any]]:
+    """Retorna CNPJs com código e status para manutenção/exportação."""
+    inicializar_banco(db_path)
+    sql = "SELECT cnpj, codigo_gerador_cnpjcpf, ativo FROM cnpjs_cetesb"
+    if somente_ativos:
+        sql += " WHERE ativo = 1"
+    sql += " ORDER BY cnpj"
+    with conectar(db_path) as conn:
+        return [dict(row) for row in conn.execute(sql)]
+
+
+def exportar_cnpjs_para_xlsx(
+    arquivo: str | Path,
+    db_path: str | Path | None = None,
+    somente_ativos: bool = True,
+) -> int:
+    """Exporta CNPJs e códigos Gerador CNPJCPF/CETESB para uma planilha XLSX."""
+    import openpyxl
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+    registros = listar_cnpjs_completos(db_path, somente_ativos=somente_ativos)
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "CNPJs CETESB"
+
+    colunas = ["CNPJ", "Gerador CNPJCPF", "Status"]
+    h_font = Font(name="Arial", bold=True, color="FFFFFF", size=10)
+    h_fill = PatternFill("solid", start_color="1B4F8A")
+    c_font = Font(name="Arial", size=10)
+    align = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    thin = Side(style="thin", color="BFBFBF")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    for ci, coluna in enumerate(colunas, 1):
+        cell = ws.cell(row=1, column=ci, value=coluna)
+        cell.font = h_font
+        cell.fill = h_fill
+        cell.alignment = align
+        cell.border = border
+
+    for ri, registro in enumerate(registros, 2):
+        valores = [
+            registro["cnpj"],
+            registro["codigo_gerador_cnpjcpf"],
+            "Ativo" if registro["ativo"] else "Inativo",
+        ]
+        for ci, valor in enumerate(valores, 1):
+            cell = ws.cell(row=ri, column=ci, value=valor)
+            cell.font = c_font
+            cell.alignment = align
+            cell.border = border
+
+    for ci, largura in enumerate((22, 20, 12), 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = largura
+    ws.freeze_panes = "A2"
+    wb.save(arquivo)
+    return len(registros)
+
+
 def salvar_residuo(dados: dict[str, Any], db_path: str | Path | None = None) -> None:
     """Insere ou altera um resíduo pelo código interno."""
     codigo_interno = texto(dados.get("codigo_interno") or dados.get("cod_interno"))

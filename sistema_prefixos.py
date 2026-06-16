@@ -14,6 +14,7 @@ from database import (
     apagar_cnpj,
     apagar_motorista,
     apagar_residuo,
+    exportar_cnpjs_para_xlsx,
     importar_cnpjs_de_xlsx,
     importar_motoristas,
     importar_residuos_de_xlsx,
@@ -442,6 +443,10 @@ class CadastroWindow:
         self._form_entry(form, 0, "CNPJ", self.var_cad_cnpj)
         self._form_entry(form, 1, "Gerador CNPJCPF", self.var_cad_codigo)
         self._buttons(form, self._limpar_cnpj, self._salvar_cnpj_cadastro, self._apagar_cnpj_cadastro)
+        tk.Button(form, text="Exportar CNPJs...", bg=COR_PRIM, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3,
+                  command=self._exportar_cnpjs_cadastro).grid(
+                  row=99, column=3, sticky="e", padx=(8, 0), pady=(8, 0))
         self._refresh_cnpjs()
 
     def _refresh_cnpjs(self):
@@ -462,6 +467,26 @@ class CadastroWindow:
         self.var_cad_cnpj.set("")
         self.var_cad_codigo.set("")
         self.tree_cnpj.selection_remove(self.tree_cnpj.selection())
+
+    def _exportar_cnpjs_cadastro(self):
+        caminho = selecionar_arquivo(
+            modo="salvar",
+            titulo="Exportar CNPJs e códigos CETESB",
+            ext="xlsx",
+        )
+        if not caminho:
+            return
+        try:
+            total = exportar_cnpjs_para_xlsx(caminho)
+            self.app._log(f"✔ {total} CNPJs exportados para: {caminho}", "ok")
+            messagebox.showinfo(
+                "Exportação concluída",
+                f"CNPJs exportados: {total}\n\nArquivo:\n{caminho}",
+                parent=self.win,
+            )
+        except Exception as e:
+            self.app._log(f"✖ Erro ao exportar CNPJs: {e}", "er")
+            messagebox.showerror("Erro", f"Não foi possível exportar os CNPJs:\n{e}", parent=self.win)
 
     def _salvar_cnpj_cadastro(self):
         try:
@@ -561,8 +586,27 @@ class CadastroWindow:
         )
         self.tree_residuo.bind("<<TreeviewSelect>>", self._selecionar_residuo)
 
+        busca = tk.Frame(tab, bg=COR_CARD)
+        busca.pack(fill="x", padx=10, pady=(0, 8))
+        tk.Label(busca, text="Pesquisar resíduo:", bg=COR_CARD, fg=COR_TEXTO,
+                 font=("Segoe UI", 9, "bold")).pack(side="left")
+        self.var_busca_residuo = tk.StringVar()
+        ent_busca = tk.Entry(busca, textvariable=self.var_busca_residuo, width=45, bg="#F8F9FA",
+                             relief="flat", highlightbackground=COR_BORDA, highlightthickness=1,
+                             font=("Segoe UI", 9))
+        ent_busca.pack(side="left", padx=6)
+        ent_busca.bind("<KeyRelease>", lambda _e: self._refresh_residuos())
+        tk.Button(busca, text="Limpar busca", bg=COR_ACENT, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=8, pady=2,
+                  command=self._limpar_busca_residuo).pack(side="left")
+
         form = tk.Frame(tab, bg=COR_CARD)
         form.pack(fill="x", padx=10, pady=(0, 10))
+        tk.Label(
+            form,
+            text="Use Novo resíduo para cadastrar; selecione um item da lista para corrigir ou apagar individualmente.",
+            bg=COR_CARD, fg=COR_MUTED, font=("Segoe UI", 9, "italic"),
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 6))
         for col in (1, 3):
             form.columnconfigure(col, weight=1)
         self.res_vars = {campo: tk.StringVar() for campo in (
@@ -582,7 +626,7 @@ class CadastroWindow:
             ("descricao", "Descrição"),
         ]
         for idx, (campo, label) in enumerate(campos):
-            row = idx // 2
+            row = (idx // 2) + 1
             base_col = (idx % 2) * 2
             tk.Label(form, text=label, bg=COR_CARD, fg=COR_TEXTO,
                      font=("Segoe UI", 9, "bold"), anchor="w").grid(
@@ -591,17 +635,38 @@ class CadastroWindow:
             tk.Entry(form, textvariable=self.res_vars[campo], width=width, bg="#F8F9FA",
                      relief="flat", highlightbackground=COR_BORDA, highlightthickness=1,
                      font=("Segoe UI", 9)).grid(row=row, column=base_col+1, sticky="ew", pady=3)
-        self._buttons(form, self._limpar_residuo, self._salvar_residuo_cadastro, self._apagar_residuo_cadastro)
+        btns = tk.Frame(form, bg=COR_CARD)
+        btns.grid(row=99, column=0, columnspan=4, sticky="w", pady=(8, 0))
+        tk.Button(btns, text="Novo resíduo", bg=COR_ACENT, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3,
+                  command=self._limpar_residuo).pack(side="left")
+        tk.Button(btns, text="Salvar/Corrigir resíduo", bg=COR_OK, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3,
+                  command=self._salvar_residuo_cadastro).pack(side="left", padx=6)
+        tk.Button(btns, text="Apagar resíduo selecionado", bg=COR_ERR, fg="white", relief="flat",
+                  font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3,
+                  command=self._apagar_residuo_cadastro).pack(side="left")
         self._refresh_residuos()
 
     def _refresh_residuos(self):
         self.residuos_completos = listar_residuos_completos()
+        termo = getattr(self, "var_busca_residuo", tk.StringVar()).get().strip().lower()
         for item in self.tree_residuo.get_children():
             self.tree_residuo.delete(item)
         for codigo, res in self.residuos_completos.items():
+            texto_busca = " ".join([
+                codigo, res.get("codigo_ibama", ""), res.get("classe", ""),
+                res.get("descricao", ""), res.get("tratamento", ""),
+            ]).lower()
+            if termo and termo not in texto_busca:
+                continue
             self.tree_residuo.insert("", "end", values=(
                 codigo, res.get("codigo_ibama", ""), res.get("classe", ""), res.get("descricao", "")
             ))
+
+    def _limpar_busca_residuo(self):
+        self.var_busca_residuo.set("")
+        self._refresh_residuos()
 
     def _selecionar_residuo(self, _event=None):
         sel = self.tree_residuo.selection()

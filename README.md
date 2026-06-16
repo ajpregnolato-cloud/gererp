@@ -24,8 +24,9 @@ Os arquivos de entrada recebidos de usuários e os arquivos de saída gerados co
 A seção **Cadastros do banco** abre uma janela de manutenção com abas para:
 
 - inserir, alterar e apagar/desativar CNPJs e o código Gerador CNPJCPF;
+- exportar a base ativa de CNPJs com seus respectivos códigos CETESB/Gerador CNPJCPF para `.xlsx`;
 - inserir, alterar e apagar/desativar placas e motoristas;
-- inserir, alterar e apagar/desativar resíduos, incluindo IBAMA, classe, estado físico, acondicionamento, tratamento, dados ONU/risco/embarque e campos auxiliares.
+- pesquisar, inserir, corrigir e apagar/desativar resíduos individualmente, incluindo IBAMA, classe, estado físico, acondicionamento, tratamento, dados ONU/risco/embarque e campos auxiliares.
 
 As alterações feitas nessa janela são salvas no `gererp.db` e passam a ser usadas na próxima geração da planilha de saída.
 
